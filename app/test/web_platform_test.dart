@@ -38,6 +38,19 @@ void main() {
 
   void schedule(List<SoundEvent> events) => backend.schedule(events);
 
+  test('volume and cancel work before initialization', () async {
+    backend.dispose();
+    audio.restore();
+    audio = BrowserFixture()..install();
+    backend = PlatformBackend(clock);
+    backend.setVolume(40);
+    backend.cancel();
+    expect(audio.gain.value, closeTo(.16, .0001));
+    await backend.initialize();
+    schedule([alarm]);
+    expect(audio.liveStarts, [12]);
+  });
+
   test(
     'keyboard resumes before Flutter stops propagation to the document',
     () async {

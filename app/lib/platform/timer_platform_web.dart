@@ -23,11 +23,20 @@ class _ScheduledSound {
 }
 
 class PlatformBackend extends TimerPlatform {
-  PlatformBackend(this._clock);
+  PlatformBackend(this._clock)
+    : _context = web.AudioContext(
+        web.AudioContextOptions(latencyHint: 'interactive'.toJS),
+      ) {
+    _gain = _context.createGain()..connect(_context.destination);
+    _activation = ((web.Event event) => unawaited(_resume())).toJS;
+    _visibility = ((web.Event event) {
+      if (web.document.visibilityState == 'visible') unawaited(_resume());
+    }).toJS;
+  }
 
   static const _activationEvents = ['pointerdown', 'pointerup', 'touchend'];
   final MonotonicClock _clock;
-  late final web.AudioContext _context;
+  final web.AudioContext _context;
   late final web.GainNode _gain;
   late final web.AudioBuffer _alarm;
   late final web.AudioBuffer _end;
@@ -42,15 +51,7 @@ class PlatformBackend extends TimerPlatform {
 
   @override
   Future<void> initialize() async {
-    _context = web.AudioContext(
-      web.AudioContextOptions(latencyHint: 'interactive'.toJS),
-    );
-    _gain = _context.createGain()..connect(_context.destination);
     _context.onstatechange = ((web.Event event) => _reconcile()).toJS;
-    _activation = ((web.Event event) => unawaited(_resume())).toJS;
-    _visibility = ((web.Event event) {
-      if (web.document.visibilityState == 'visible') unawaited(_resume());
-    }).toJS;
     for (final type in _activationEvents) {
       web.document.addEventListener(type, _activation, true.toJS);
     }
@@ -154,7 +155,7 @@ class PlatformBackend extends TimerPlatform {
         when,
         when + buffer.duration,
       );
-      // A later cue replaces an overlapping sound on the single audio stream.
+      // SoundPool parity requires a single audible stream.
       for (final other in _sources.values) {
         if (other.when <= when && other.until > when) {
           _cutOff(other, when);
