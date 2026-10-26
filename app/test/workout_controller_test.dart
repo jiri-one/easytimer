@@ -54,6 +54,46 @@ void main() {
       expect(settings.volume, 1);
     });
 
+    for (final (key, bad) in [
+      ('activeTime', '45'),
+      ('restTime', true),
+      ('sets', <String>['2']),
+      ('volume', 'loud'),
+      ('volume', double.nan),
+      ('volume', double.infinity),
+    ]) {
+      test(
+        'ignores mistyped $key=$bad and preserves other valid keys',
+        () async {
+          SharedPreferences.setMockInitialValues({
+            'activeTime': 60,
+            'restTime': 20,
+            'sets': 8,
+            'volume': .4,
+            key: bad,
+          });
+          final settings = await TimerSettings.load();
+          expect(settings.options.active, key == 'activeTime' ? 45 : 60);
+          expect(settings.options.rest, key == 'restTime' ? 15 : 20);
+          expect(settings.options.sets, key == 'sets' ? 0 : 8);
+          expect(settings.volume, key == 'volume' ? 1 : .4);
+        },
+      );
+    }
+
+    test('a corrupt store falls back to working in-memory settings', () async {
+      final settings = await TimerSettings.load(
+        loader: () async => throw const FormatException('Malformed JSON'),
+      );
+      expect(settings.preferences, isNull);
+      expect(settings.options.active, 45);
+      await settings.saveOptions(
+        const WorkoutOptions(active: 25, rest: 0, sets: 4),
+      );
+      await settings.saveVolume(.7);
+      expect(settings.options.active, 25);
+      expect(settings.volume, .7);
+    });
     test('loads saved workout values and slider position', () async {
       SharedPreferences.setMockInitialValues({
         'activeTime': 60,
@@ -76,6 +116,44 @@ void main() {
       });
     }
 
+    test(
+      'numeric preferences accept integer and floating JSON spellings',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'activeTime': 60.0,
+          'restTime': 20.0,
+          'sets': 8.0,
+          'volume': 1,
+        });
+        final settings = await TimerSettings.load();
+        expect(
+          (
+            settings.options.active,
+            settings.options.rest,
+            settings.options.sets,
+          ),
+          (60, 20, 8),
+        );
+        expect(settings.volumePercent, 100);
+        SharedPreferences.setMockInitialValues({
+          'volumePercent': 35.0,
+          'volume': .9,
+        });
+        expect((await TimerSettings.load()).volumePercent, 35);
+      },
+    );
+
+    test(
+      'legacy fractional volume migrates to an integer percentage',
+      () async {
+        SharedPreferences.setMockInitialValues({'volume': .35});
+        final settings = await TimerSettings.load();
+        expect(settings.volumePercent, 35);
+        await settings.saveVolume(settings.volume);
+        expect(settings.preferences!.get('volumePercent'), 35);
+        expect((await TimerSettings.load()).volume, .35);
+      },
+    );
     test('normalizes invalid saved durations and set counts', () async {
       SharedPreferences.setMockInitialValues({
         'activeTime': -1,
@@ -100,7 +178,7 @@ void main() {
     });
 
     test(
-      'saves options and clamped slider values to their existing keys',
+      'saves options and clamped integer volume percentages',
       () async {
         SharedPreferences.setMockInitialValues({});
         final settings = await TimerSettings.load();
@@ -108,23 +186,23 @@ void main() {
           const WorkoutOptions(active: 25, rest: 0, sets: 4),
         );
         await settings.saveVolume(0.6);
-        await settings.preferences.reload();
+        await settings.preferences!.reload();
         final saved = await TimerSettings.load();
         expect(
           (saved.options.active, saved.options.rest, saved.options.sets),
           (25, 0, 4),
         );
         expect(saved.volume, 0.6);
-        expect(settings.preferences.getKeys(), {
+        expect(settings.preferences!.getKeys(), {
           'activeTime',
           'restTime',
           'sets',
-          'volume',
+          'volumePercent',
         });
         await settings.saveVolume(-3);
-        expect(settings.preferences.getDouble('volume'), 0);
+        expect(settings.preferences!.getInt('volumePercent'), 0);
         await settings.saveVolume(3);
-        expect(settings.preferences.getDouble('volume'), 1);
+        expect(settings.preferences!.getInt('volumePercent'), 100);
       },
     );
   });
@@ -166,7 +244,7 @@ void main() {
       ]);
       expect(h.platform.cancellations, [false]);
       expect(h.platform.awake, [true]);
-      await h.settings.preferences.reload();
+      await h.settings.preferences!.reload();
       final saved = await TimerSettings.load();
       expect(
         (saved.options.active, saved.options.rest, saved.options.sets),
@@ -181,7 +259,7 @@ void main() {
       h.controller.changeVolume(0.5);
       await h.pump();
       expect(h.controller.volume, 0.5);
-      expect(h.settings.preferences.getDouble('volume'), 0.5);
+      expect(h.settings.preferences!.getInt('volumePercent'), 50);
       expect(h.platform.gains, [1, 0.25]);
       expect(h.notifications, 1);
       h.controller.changeVolume(0.5);
@@ -191,12 +269,12 @@ void main() {
       h.controller.changeVolume(-1);
       await h.pump();
       expect(h.controller.volume, 0);
-      expect(h.settings.preferences.getDouble('volume'), 0);
+      expect(h.settings.preferences!.getInt('volumePercent'), 0);
       h.controller.changeVolume(2);
       await h.pump();
       h.controller.changeVolume(3);
       expect(h.controller.volume, 1);
-      expect(h.settings.preferences.getDouble('volume'), 1);
+      expect(h.settings.preferences!.getInt('volumePercent'), 100);
       expect(h.platform.gains, [1, 0.25, 0, 1]);
       expect(h.notifications, 3);
     },

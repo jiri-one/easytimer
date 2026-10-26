@@ -5,30 +5,64 @@ import 'timer_engine.dart';
 class TimerSettings {
   TimerSettings(this.preferences)
     : options = WorkoutOptions.fromText(
-        '${preferences.getInt('activeTime') ?? 45}',
-        '${preferences.getInt('restTime') ?? 15}',
-        '${preferences.getInt('sets') ?? 0}',
+        '${_duration(preferences?.get('activeTime'), 45)}',
+        '${_duration(preferences?.get('restTime'), 15)}',
+        '${_duration(preferences?.get('sets'), 0)}',
       ),
-      volume = (preferences.getDouble('volume') ?? 1).clamp(0, 1);
+      volumePercent = _savedVolume(preferences);
 
-  final SharedPreferences preferences;
+  final SharedPreferences? preferences;
   WorkoutOptions options;
-  double volume;
+  int volumePercent;
+  double get volume => volumePercent / 100;
 
-  static Future<TimerSettings> load() async =>
-      TimerSettings(await SharedPreferences.getInstance());
+  static int _duration(Object? value, int fallback) =>
+      value is num && value.isFinite && value >= 0 && value <= 9999
+      ? value.round()
+      : fallback;
+
+  static int _percent(num value) =>
+      value.isFinite ? value.round().clamp(0, 100) : 100;
+
+  static int _savedVolume(SharedPreferences? preferences) {
+    final percent = preferences?.get('volumePercent');
+    if (percent is num && percent.isFinite) return _percent(percent);
+    // The former key stores a fraction, including JSON's integer spelling of 1.0.
+    final legacy = preferences?.get('volume');
+    return legacy is num ? _percent(legacy * 100) : 100;
+  }
+
+  static Future<TimerSettings> load({
+    Future<SharedPreferences> Function()? loader,
+  }) async {
+    try {
+      return TimerSettings(await (loader ?? SharedPreferences.getInstance)());
+    } catch (_) {
+      return TimerSettings(null);
+    }
+  }
 
   Future<void> saveOptions(WorkoutOptions value) async {
     options = value;
-    await Future.wait([
-      preferences.setInt('activeTime', value.active),
-      preferences.setInt('restTime', value.rest),
-      preferences.setInt('sets', value.sets),
-    ]);
+    final store = preferences;
+    if (store == null) return;
+    try {
+      await Future.wait([
+        store.setInt('activeTime', value.active),
+        store.setInt('restTime', value.rest),
+        store.setInt('sets', value.sets),
+      ]);
+    } catch (_) {
+      // Unavailable storage must not interrupt an active workout.
+    }
   }
 
   Future<void> saveVolume(double value) async {
-    volume = value.clamp(0, 1);
-    await preferences.setDouble('volume', volume);
+    volumePercent = _percent(value * 100);
+    try {
+      await preferences?.setInt('volumePercent', volumePercent);
+    } catch (_) {
+      // Volume remains usable when persistence fails.
+    }
   }
 }
