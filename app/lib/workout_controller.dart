@@ -8,7 +8,8 @@ import 'timer_engine.dart';
 
 class WorkoutController extends ChangeNotifier {
   WorkoutController(this.settings, this.platform, {MonotonicClock? clock})
-    : engine = TimerEngine(clock ?? createWorkoutClock()) {
+    : engine = TimerEngine(clock ?? createWorkoutClock()),
+      volumeState = ValueNotifier(settings.volume) {
     platform.setVolume(volume * volume);
     platform.onVisibilityChanged = refresh;
   }
@@ -16,6 +17,7 @@ class WorkoutController extends ChangeNotifier {
   final TimerSettings settings;
   final TimerPlatform platform;
   final TimerEngine engine;
+  final ValueNotifier<double> volumeState;
   Timer? _update;
   bool showingTimer = false;
   TimerSnapshot _display = const TimerSnapshot(
@@ -28,9 +30,12 @@ class WorkoutController extends ChangeNotifier {
   TimerSnapshot get display => _display;
   double get volume => settings.volume;
 
+  void stepVolume(int percent) =>
+      changeVolume((settings.volumePercent + percent).clamp(0, 100) / 100);
+
   void start(WorkoutOptions options) {
     platform.unlock();
-    platform.cancel();
+    platform.beginWorkout();
     unawaited(settings.saveOptions(options));
     engine.start(options);
     showingTimer = true;
@@ -60,11 +65,13 @@ class WorkoutController extends ChangeNotifier {
   }
 
   void changeVolume(double value) {
-    final next = value.clamp(0.0, 1.0);
+    final next = value.isFinite
+        ? (value * 100).round().clamp(0, 100) / 100
+        : 1.0;
     if (next == volume) return;
     unawaited(settings.saveVolume(next));
     platform.setVolume(next * next);
-    notifyListeners();
+    volumeState.value = next;
   }
 
   void refresh({bool force = false}) {
@@ -100,6 +107,7 @@ class WorkoutController extends ChangeNotifier {
     platform.onVisibilityChanged = null;
     platform.keepAwake(false);
     platform.dispose();
+    volumeState.dispose();
     super.dispose();
   }
 }

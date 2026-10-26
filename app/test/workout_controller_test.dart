@@ -256,16 +256,20 @@ void main() {
   _controllerTest(
     'slider changes persist the raw value and apply squared gain',
     (h) async {
+      var volumeNotifications = 0;
+      h.controller.volumeState.addListener(() => volumeNotifications++);
       h.controller.changeVolume(0.5);
       await h.pump();
       expect(h.controller.volume, 0.5);
       expect(h.settings.preferences!.getInt('volumePercent'), 50);
       expect(h.platform.gains, [1, 0.25]);
-      expect(h.notifications, 1);
+      expect(h.notifications, 0);
+      expect(volumeNotifications, 1);
       h.controller.changeVolume(0.5);
       await h.pump();
       expect(h.platform.gains, [1, 0.25]);
-      expect(h.notifications, 1);
+      expect(h.notifications, 0);
+      expect(volumeNotifications, 1);
       h.controller.changeVolume(-1);
       await h.pump();
       expect(h.controller.volume, 0);
@@ -276,10 +280,26 @@ void main() {
       expect(h.controller.volume, 1);
       expect(h.settings.preferences!.getInt('volumePercent'), 100);
       expect(h.platform.gains, [1, 0.25, 0, 1]);
-      expect(h.notifications, 3);
+      expect(h.notifications, 0);
+      expect(volumeNotifications, 3);
     },
   );
 
+  _controllerTest(
+    'seven five-percent decreases from 35 reach exact persisted mute',
+    (h) async {
+      for (var step = 0; step < 7; step++) {
+        h.controller.changeVolume(h.controller.volume - .05);
+        await h.pump();
+      }
+      expect(h.controller.volume, 0);
+      expect(h.settings.volumePercent, 0);
+      expect(h.settings.preferences!.get('volumePercent'), 0);
+      expect(h.platform.gains.last, 0);
+      expect(h.notifications, 0);
+    },
+    preferences: {'volume': .35},
+  );
   _controllerTest('refresh does not rebuild within the same displayed second', (
     h,
   ) async {

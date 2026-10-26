@@ -30,6 +30,14 @@ class _EasyTimerAppState extends State<EasyTimerApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_unlockOnKeyEvent);
+  }
+
+  bool _unlockOnKeyEvent(KeyEvent event) {
+    if (event is KeyDownEvent || event is KeyRepeatEvent) {
+      widget.controller.platform.unlock();
+    }
+    return false;
   }
 
   @override
@@ -39,6 +47,7 @@ class _EasyTimerAppState extends State<EasyTimerApp>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_unlockOnKeyEvent);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -59,15 +68,6 @@ class _EasyTimerAppState extends State<EasyTimerApp>
       highlightColor: Colors.transparent,
       hoverColor: Colors.transparent,
       shadowColor: Colors.transparent,
-      iconTheme: IconThemeData(
-        color: dark ? const Color(0xffc1c1c1) : const Color(0xff6f6f6f),
-      ),
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: _InstantPageTransition(),
-          TargetPlatform.linux: _InstantPageTransition(),
-        },
-      ),
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: dark ? Colors.white : Colors.black,
       ),
@@ -76,7 +76,7 @@ class _EasyTimerAppState extends State<EasyTimerApp>
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'EasyTimer',
+    onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
     debugShowCheckedModeBanner: false,
     locale: widget.locale,
     localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -91,6 +91,15 @@ class _EasyTimerAppState extends State<EasyTimerApp>
     darkTheme: _theme(Brightness.dark),
     themeMode: widget.themeMode,
     themeAnimationDuration: Duration.zero,
+    scrollBehavior: const MaterialScrollBehavior().copyWith(
+      scrollbars: false,
+      overscroll: false,
+    ),
+    builder: (context, child) => Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => widget.controller.platform.unlock(),
+      child: child,
+    ),
     home: ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) => CallbackShortcuts(
@@ -106,9 +115,9 @@ class _EasyTimerAppState extends State<EasyTimerApp>
             if (widget.controller.showingTimer) widget.controller.stop();
           },
           const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-              widget.controller.changeVolume(widget.controller.volume + .05),
+              widget.controller.stepVolume(5),
           const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-              widget.controller.changeVolume(widget.controller.volume - .05),
+              widget.controller.stepVolume(-5),
         },
         child: Focus(
           autofocus: true,
@@ -134,17 +143,4 @@ class _EasyTimerAppState extends State<EasyTimerApp>
       ),
     ),
   );
-}
-
-class _InstantPageTransition extends PageTransitionsBuilder {
-  const _InstantPageTransition();
-
-  @override
-  Widget buildTransitions<T>(
-    PageRoute<T> route,
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) => child;
 }

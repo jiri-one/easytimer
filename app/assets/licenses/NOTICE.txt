@@ -1,0 +1,69 @@
+EasyTimer third-party notices
+
+Interval Timer
+--------------
+Original application source, translated strings, and audio:
+Copyright (c) 2023 Matthew Nienow and contributors
+License: MIT
+Full license: app/assets/licenses/IntervalTimer-MIT.txt
+Upstream: https://github.com/randombits-dev/interval-timer
+Base strings and WAV revision: 76098d68efb0da4674f6cd5685a68e467da8f831
+
+The base English, Czech, Catalan, Spanish and French strings in app/lib/l10n/
+are adapted from upstream app/src/main/res/values*/strings.xml. Contributions:
+  Czech: ikanakova, 6c4132b4c7eac13b7e7bb259fdcd142cd38c26d3
+  Spanish: juan-angel, 8ca3f4175b86a152bb1a427373d5a7d660d754f5
+  Spanish set labels: CertainBot, 55a8b96bba5448203ef03633a4b6bdf3c4f755ff
+  French: v4nadium, 650804fe4704a02ca6728b3ab0d7c6daf3d6e5e6
+  Catalan: v4nadium, 01d514fb96afe27a842c3eee66197f3eebc7c7e4
+
+The volume labels in all five locales come from Jiří Němec's MIT-licensed
+fork, https://github.com/jiri-one/interval-timer, commit
+412335159985a875f1ae05c118d96666d1a8735a (volume-slider, PR #25).
+The visual/behaviour reference is that fork's volume-slider tip
+5abf5fe34d93653a0ef7425fe2e2717ac3d39561, not an upstream revision.
+EasyTimer changes the application title and adds unlimited-set labels.
+
+These audio files are byte-identical to upstream app/src/main/res/raw/:
+  app/assets/audio/hit.wav
+    SHA-256: 8c5a009c32d62a21e3a7839ac4b51e49029a54ce73b5846f7b4bbf7d389b7b0a
+  app/assets/audio/threesecbeep.wav
+    SHA-256: f3a8a128165c2a3c3308e0a1fb58f81f4ab21301952941635eeedb025462b75b
+
+Droid Sans Mono
+---------------
+Digitized data copyright © 2007, Google Corporation.
+Copyright (c) 2005-2008, The Android Open Source Project
+License: Apache License, Version 2.0
+Full license: app/assets/licenses/DroidSansMono-Apache-2.0.txt
+Source: Android Open Source Project, android-15.0.0_r1
+
+Unmodified Droid Sans Mono, Android's native monospace typeface:
+  app/assets/fonts/DroidSansMono.ttf
+SHA-256: db19a1fdaba41cc4a2fec0330e5c15e71c6dd68a3ef074f4f28268828b45c862
+
+The same bundled file is registered under Flutter's default "Roboto" alias
+so all build variants use local fonts without contacting a font service.
+
+Original font:
+https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-15.0.0_r1/data/fonts/DroidSansMono.ttf
+Original license:
+https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-15.0.0_r1/data/fonts/NOTICE
+
+Material speaker vectors
+------------------------
+Copyright Google, Inc.
+License: Apache License, Version 2.0
+Full license: app/assets/licenses/MaterialIcons-Apache-2.0.txt
+
+The volume_up and volume_off paths in app/lib/ui/volume_control.dart are
+ported from the original app's Android vector drawables. Their geometry is
+Google Material Design Icons 3.0.1, translated from SVG/Android path commands
+to Dart Path calls. No Material Icons font is bundled.
+
+Pinned upstream revision: 40ef0f297970f0e78bf87569f43ea90ec53d571c
+https://github.com/google/material-design-icons/tree/40ef0f297970f0e78bf87569f43ea90ec53d571c/av/svg/production
+https://github.com/google/material-design-icons/blob/40ef0f297970f0e78bf87569f43ea90ec53d571c/LICENSE
+
+EasyTimer's GPL-3.0-only text is bundled in app/assets/licenses/EasyTimer-GPL-3.0.txt.
+Flutter and dependency notices are generated separately by Flutter's build.

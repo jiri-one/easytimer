@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'static_control.dart';
+
 enum ControlSymbol { play, pause, stop }
 
 class CircleControl extends StatelessWidget {
@@ -19,34 +21,22 @@ class CircleControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox.square(
     dimension: size,
-    child: TextButton(
+    child: StaticButton(
+      label: label,
       onPressed: onPressed,
-      style: TextButton.styleFrom(
-        padding: EdgeInsets.zero,
-        shape: const CircleBorder(),
-        animationDuration: Duration.zero,
-        overlayColor: Colors.transparent,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Semantics(
-        label: label,
-        child: CustomPaint(
-          size: Size.square(size),
-          painter: _ControlPainter(
-            symbol,
-            Theme.of(context).scaffoldBackgroundColor,
-          ),
-        ),
+      shape: BoxShape.circle,
+      child: CustomPaint(
+        size: Size.square(size),
+        painter: _ControlPainter(symbol),
       ),
     ),
   );
 }
 
 class _ControlPainter extends CustomPainter {
-  _ControlPainter(this.symbol, this.background);
+  _ControlPainter(this.symbol);
 
   final ControlSymbol symbol;
-  final Color background;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -86,5 +76,5 @@ class _ControlPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ControlPainter oldDelegate) =>
-      symbol != oldDelegate.symbol || background != oldDelegate.background;
+      symbol != oldDelegate.symbol;
 }

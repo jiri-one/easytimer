@@ -2,6 +2,7 @@ import 'package:easytimer/app.dart';
 import 'package:easytimer/platform/timer_platform.dart';
 import 'package:easytimer/settings.dart';
 import 'package:easytimer/timer_engine.dart';
+import 'package:easytimer/ui/controls.dart';
 import 'package:easytimer/workout_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -37,9 +38,7 @@ void main() {
   setUpAll(() async {
     final font = FontLoader('DroidSansMono')
       ..addFont(rootBundle.load('assets/fonts/DroidSansMono.ttf'));
-    final icons = FontLoader('MaterialIcons')
-      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
-    await Future.wait([font.load(), icons.load()]);
+    await font.load();
   });
 
   final sizes = [
@@ -47,6 +46,7 @@ void main() {
     ('phone_1875', const Size(824, 1648), 1.875),
     ('phone_250', const Size(824, 1648), 2.5),
     ('desktop', const Size(420, 760), 1.0),
+    ('short', const Size(640, 400), 1.0),
     ('wide', const Size(1440, 900), 1.0),
   ];
 
@@ -61,6 +61,7 @@ void main() {
     bool dark = false,
     bool paused = false,
     double volume = 1,
+    bool showControls = false,
   }) async {
     tester.view.devicePixelRatio = dpr;
     tester.view.physicalSize = size;
@@ -92,6 +93,10 @@ void main() {
         ),
       );
       await tester.pump();
+      if (showControls) {
+        await tester.ensureVisible(find.byType(CircleControl).last);
+        await tester.pump();
+      }
       expect(tester.takeException(), isNull);
       final image =
           await (boundary.currentContext!.findRenderObject()
@@ -135,6 +140,37 @@ void main() {
         time: 5000,
         dark: dark,
         volume: .6,
+      );
+    });
+  }
+  testWidgets('short timer controls remain reachable at native size', (
+    tester,
+  ) async {
+    await capture(
+      tester,
+      'timer_short_controls',
+      const Size(640, 400),
+      1,
+      timer: true,
+      paused: true,
+      volume: 0,
+      showControls: true,
+    );
+  });
+  for (final dark in [false, true]) {
+    testWidgets('muted outlined thumb ${dark ? 'dark' : 'light'}', (
+      tester,
+    ) async {
+      await capture(
+        tester,
+        'timer_muted_${dark ? 'dark' : 'light'}',
+        const Size(618, 985),
+        1.5,
+        timer: true,
+        time: 5000,
+        paused: true,
+        dark: dark,
+        volume: 0,
       );
     });
   }

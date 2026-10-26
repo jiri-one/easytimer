@@ -6,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import '../timer_engine.dart';
 import '../workout_controller.dart';
 import 'controls.dart';
+import 'instant_scroll.dart';
 import 'native_style.dart';
 import 'volume_control.dart';
 
@@ -51,7 +52,7 @@ class TimerScreen extends StatelessWidget {
         final density = MediaQuery.devicePixelRatioOf(context);
         final buttonSize = (size * density).round() / density;
         return Center(
-          child: SingleChildScrollView(
+          child: InstantScrollView(
             child: SizedBox(
               width: width,
               child: Column(
@@ -89,10 +90,13 @@ class TimerScreen extends StatelessWidget {
                       SizedBox(
                         width: nativeDimension(context, 48),
                         height: buttonSize,
-                        child: VolumeControl(
-                          label: strings.volume,
-                          value: controller.volume,
-                          onChanged: controller.changeVolume,
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: controller.volumeState,
+                          builder: (context, volume, _) => VolumeControl(
+                            label: strings.volume,
+                            value: volume,
+                            onChanged: controller.changeVolume,
+                          ),
                         ),
                       ),
                     ],

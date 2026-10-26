@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../timer_engine.dart';
 import '../workout_controller.dart';
 import 'controls.dart';
+import 'instant_scroll.dart';
 import 'native_style.dart';
+import 'number_field.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.controller});
@@ -78,7 +79,14 @@ class SettingsScreenState extends State<SettingsScreen> {
             ].fold<double>(
               0,
               (height, label) =>
-                  height + NativeText.measure(context, label, 20, screen.width),
+                  height +
+                  NativeText.measure(
+                    context,
+                    label,
+                    20,
+                    screen.width,
+                    bold: true,
+                  ),
             ) +
             56 * 3 +
             20 * 2 +
@@ -89,7 +97,9 @@ class SettingsScreenState extends State<SettingsScreen> {
             .clamp(1.0, 2.5);
         double dimension(double value) =>
             nativeDimension(context, value, scale);
-        final dark = Theme.of(context).brightness == Brightness.dark;
+        // Height-limited scaling otherwise narrows the native reference column;
+        // wider rows preserve its proportions without inventing vertical space.
+        final rowWidth = math.min(.8 * constraints.maxWidth, dimension(220));
         Widget field(
           String label,
           TextEditingController controller,
@@ -98,89 +108,39 @@ class SettingsScreenState extends State<SettingsScreen> {
           VoidCallback subtract,
           VoidCallback add, {
           String? hint,
+          String? semanticHint,
         }) => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            NativeText(label, size: 20 * scale),
+            NativeText(label, size: 20 * scale, bold: true),
             SizedBox(
-              width: dimension(200),
+              width: rowWidth,
               height: dimension(56),
               child: Row(
                 children: [
-                  IconButton(
+                  NumberStepButton(
+                    label: less,
+                    add: false,
+                    scale: scale,
                     onPressed: subtract,
-                    tooltip: less,
-                    padding: EdgeInsets.all(dimension(16)),
-                    constraints: BoxConstraints.tightFor(
-                      width: dimension(56),
-                      height: dimension(56),
-                    ),
-                    iconSize: dimension(24),
-                    icon: const Icon(Icons.remove),
                   ),
                   Expanded(
-                    child: Semantics(
+                    child: NumberField(
+                      key: ValueKey(label),
                       label: label,
-                      child: TextField(
-                        key: ValueKey(label),
-                        controller: controller,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        cursorOpacityAnimates: false,
-                        showCursor: false,
-                        style: TextStyle(
-                          fontFamily: 'DroidSansMono',
-                          fontSize: 18 * scale,
-                          color: dark
-                              ? const Color(0xffeeeeee)
-                              : const Color(0xff212121),
-                        ),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(4),
-                        ],
-                        decoration: InputDecoration(
-                          hintText: hint,
-                          hintFadeDuration: Duration.zero,
-                          hintStyle: TextStyle(
-                            color: dark
-                                ? const Color(0xffcccccc)
-                                : const Color(0xff6f6f6f),
-                          ),
-                          contentPadding: EdgeInsets.symmetric(
-                            vertical: dimension(8),
-                          ),
-                          isDense: true,
-                          enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: dark
-                                  ? const Color(0xffaaaaaa)
-                                  : const Color(0xff525252),
-                            ),
-                          ),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: dark
-                                  ? const Color(0xffcccccc)
-                                  : const Color(0xff525252),
-                            ),
-                          ),
-                        ),
-                        onChanged: (_) => _save(),
-                        onSubmitted: (_) => start(),
-                      ),
+                      controller: controller,
+                      scale: scale,
+                      hint: hint,
+                      semanticHint: semanticHint,
+                      onChanged: _save,
+                      onSubmitted: start,
                     ),
                   ),
-                  IconButton(
+                  NumberStepButton(
+                    label: more,
+                    add: true,
+                    scale: scale,
                     onPressed: add,
-                    tooltip: more,
-                    padding: EdgeInsets.all(dimension(16)),
-                    constraints: BoxConstraints.tightFor(
-                      width: dimension(56),
-                      height: dimension(56),
-                    ),
-                    iconSize: dimension(24),
-                    icon: const Icon(Icons.add),
                   ),
                 ],
               ),
@@ -188,7 +148,7 @@ class SettingsScreenState extends State<SettingsScreen> {
           ],
         );
         return Center(
-          child: SingleChildScrollView(
+          child: InstantScrollView(
             child: SizedBox(
               width: math.min(constraints.maxWidth, 640),
               child: Column(
@@ -220,6 +180,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                     () => _change(_sets, 0, 0, -1, emptyZero: true),
                     () => _change(_sets, 0, 0, 1, emptyZero: true),
                     hint: '∞',
+                    semanticHint: strings.unlimited,
                   ),
                   SizedBox(height: dimension(30)),
                   CircleControl(

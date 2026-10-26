@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-class VolumeControl extends StatelessWidget {
+import 'static_control.dart';
+
+class VolumeControl extends StatefulWidget {
   const VolumeControl({
     super.key,
     required this.label,
@@ -13,7 +15,22 @@ class VolumeControl extends StatelessWidget {
   final double value;
   final ValueChanged<double> onChanged;
 
-  void _step(double delta) => onChanged((value + delta).clamp(0, 1));
+  @override
+  State<VolumeControl> createState() => _VolumeControlState();
+}
+
+class _VolumeControlState extends State<VolumeControl> {
+  final _focus = FocusNode(debugLabel: 'Volume');
+
+  void _step(int percent) => widget.onChanged(
+    ((widget.value * 100).round() + percent).clamp(0, 100) / 100,
+  );
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -21,35 +38,53 @@ class VolumeControl extends StatelessWidget {
       void position(Offset local) {
         final fraction = (1 - (local.dy - 16) / (constraints.maxHeight - 32))
             .clamp(0, 1);
-        onChanged((fraction * 100).round() / 100);
+        _focus.requestFocus();
+        widget.onChanged((fraction * 100).round() / 100);
       }
 
       return Semantics(
-        label: label,
+        label: widget.label,
         slider: true,
-        value: '${(value * 100).round()}%',
-        increasedValue: '${((value + .05).clamp(0, 1) * 100).round()}%',
-        decreasedValue: '${((value - .05).clamp(0, 1) * 100).round()}%',
-        onIncrease: () => _step(.05),
-        onDecrease: () => _step(-.05),
-        child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.arrowUp): () => _step(.05),
-            const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-                _step(-.05),
+        focusable: true,
+        focused: _focus.hasFocus,
+        onFocus: _focus.requestFocus,
+        value: '${(widget.value * 100).round()}%',
+        increasedValue: '${((widget.value + .05).clamp(0, 1) * 100).round()}%',
+        decreasedValue: '${((widget.value - .05).clamp(0, 1) * 100).round()}%',
+        onIncrease: () => _step(5),
+        onDecrease: () => _step(-5),
+        child: Focus(
+          focusNode: _focus,
+          includeSemantics: false,
+          onFocusChange: (_) => setState(() {}),
+          onKeyEvent: (_, event) {
+            final delta = switch (event.logicalKey) {
+              LogicalKeyboardKey.arrowUp || LogicalKeyboardKey.arrowRight => 5,
+              LogicalKeyboardKey.arrowDown ||
+              LogicalKeyboardKey.arrowLeft => -5,
+              _ => null,
+            };
+            if (delta == null) return KeyEventResult.ignored;
+            if (event is KeyDownEvent || event is KeyRepeatEvent) _step(delta);
+            return KeyEventResult.handled;
           },
-          child: Focus(
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
+              excludeFromSemantics: true,
               onTapDown: (details) => position(details.localPosition),
               onVerticalDragStart: (details) => position(details.localPosition),
               onVerticalDragUpdate: (details) =>
                   position(details.localPosition),
-              child: CustomPaint(
-                size: constraints.biggest,
-                painter: _VolumePainter(
-                  value,
-                  Theme.of(context).brightness == Brightness.dark,
+              child: StaticFocusBorder(
+                focused: _focus.hasFocus,
+                child: CustomPaint(
+                  size: constraints.biggest,
+                  painter: _VolumePainter(
+                    widget.value,
+                    Theme.of(context).brightness == Brightness.dark,
+                  ),
                 ),
               ),
             ),
@@ -101,27 +136,75 @@ class _VolumePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
-    final painter = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(
-          (value == 0 ? Icons.volume_off : Icons.volume_up).codePoint,
-        ),
-        style: const TextStyle(
-          fontFamily: 'MaterialIcons',
-          fontSize: 20,
-          color: Color(0xff222222),
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(
-      canvas,
-      center - Offset(painter.width / 2, painter.height / 2),
+    canvas.save();
+    canvas.translate(center.dx - 10, center.dy - 10);
+    canvas.scale(20 / 24);
+    canvas.drawPath(
+      value == 0 ? _mutedSpeaker : _speaker,
+      Paint()..color = const Color(0xff222222),
     );
-    painter.dispose();
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(_VolumePainter oldDelegate) =>
       oldDelegate.value != value || oldDelegate.dark != dark;
 }
+
+final _speaker = Path()
+  ..moveTo(3, 9)
+  ..lineTo(3, 15)
+  ..lineTo(7, 15)
+  ..lineTo(12, 20)
+  ..lineTo(12, 4)
+  ..lineTo(7, 9)
+  ..close()
+  ..moveTo(16.5, 12)
+  ..relativeCubicTo(0, -1.77, -1.02, -3.29, -2.5, -4.03)
+  ..relativeLineTo(0, 8.05)
+  ..relativeCubicTo(1.48, -.73, 2.5, -2.25, 2.5, -4.02)
+  ..close()
+  ..moveTo(14, 3.23)
+  ..relativeLineTo(0, 2.06)
+  ..relativeCubicTo(2.89, .86, 5, 3.54, 5, 6.71)
+  ..relativeCubicTo(0, 3.17, -2.11, 5.85, -5, 6.71)
+  ..relativeLineTo(0, 2.06)
+  ..relativeCubicTo(4.01, -.91, 7, -4.49, 7, -8.77)
+  ..relativeCubicTo(0, -4.28, -2.99, -7.86, -7, -8.77)
+  ..close();
+
+final _mutedSpeaker = Path()
+  ..moveTo(16.5, 12)
+  ..relativeCubicTo(0, -1.77, -1.02, -3.29, -2.5, -4.03)
+  ..relativeLineTo(0, 2.21)
+  ..relativeLineTo(2.45, 2.45)
+  ..relativeCubicTo(.03, -.2, .05, -.41, .05, -.63)
+  ..close()
+  ..moveTo(19, 12)
+  ..relativeCubicTo(0, .94, -.2, 1.82, -.54, 2.64)
+  ..relativeLineTo(1.51, 1.51)
+  ..cubicTo(20.63, 14.91, 21, 13.5, 21, 12)
+  ..relativeCubicTo(0, -4.28, -2.99, -7.86, -7, -8.77)
+  ..relativeLineTo(0, 2.06)
+  ..relativeCubicTo(2.89, .86, 5, 3.54, 5, 6.71)
+  ..close()
+  ..moveTo(4.27, 3)
+  ..lineTo(3, 4.27)
+  ..lineTo(7.73, 9)
+  ..lineTo(3, 9)
+  ..lineTo(3, 15)
+  ..lineTo(7, 15)
+  ..lineTo(12, 20)
+  ..lineTo(12, 13.27)
+  ..relativeLineTo(4.25, 4.25)
+  ..relativeCubicTo(-.67, .52, -1.42, .93, -2.25, 1.18)
+  ..relativeLineTo(0, 2.06)
+  ..relativeCubicTo(1.38, -.31, 2.63, -.95, 3.69, -1.81)
+  ..lineTo(19.73, 21)
+  ..lineTo(21, 19.73)
+  ..relativeLineTo(-9, -9)
+  ..close()
+  ..moveTo(12, 4)
+  ..lineTo(9.91, 6.09)
+  ..lineTo(12, 8.18)
+  ..close();

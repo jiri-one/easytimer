@@ -8,6 +8,7 @@ abstract class TimerPlatform {
 
   Future<void> initialize();
   void unlock();
+  void beginWorkout() => cancel();
   void schedule(List<SoundEvent> events, MonotonicClock clock);
   void cancel({bool keepEnd = false});
   void setVolume(double gain);
