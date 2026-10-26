@@ -1,17 +1,25 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'preferences_loader.dart'
+    if (dart.library.io) 'preferences_loader_io.dart';
 import 'timer_engine.dart';
 
 class TimerSettings {
-  TimerSettings(this.preferences)
-    : options = WorkoutOptions.normalized(
+  TimerSettings(SharedPreferences? preferences)
+    : _preferences = preferences,
+      options = WorkoutOptions.normalized(
         _duration(preferences?.get('activeTime')),
         _duration(preferences?.get('restTime')),
         _duration(preferences?.get('sets')),
       ),
       volumePercent = _savedVolume(preferences);
 
-  final SharedPreferences? preferences;
+  SharedPreferences? _preferences;
+  SharedPreferences? get preferences => _preferences;
+  Future<SharedPreferences> Function() _loader = loadPreferences;
+  Future<void> _writes = Future<void>.value();
+  final _pending = <String, int>{};
+  final _unconfirmed = <String>{};
   WorkoutOptions options;
   final int volumePercent;
 
@@ -31,32 +39,44 @@ class TimerSettings {
   static Future<TimerSettings> load({
     Future<SharedPreferences> Function()? loader,
   }) async {
+    final read = loader ?? loadPreferences;
     try {
-      return TimerSettings(await (loader ?? SharedPreferences.getInstance)());
+      return TimerSettings(await read()).._loader = read;
     } catch (_) {
-      return TimerSettings(null);
+      return TimerSettings(null).._loader = read;
     }
   }
 
-  Future<void> saveOptions(WorkoutOptions value) async {
+  Future<void> saveOptions(WorkoutOptions value) {
     options = value;
-    for (final (key, number) in [
-      ('activeTime', value.active),
-      ('restTime', value.rest),
-      ('sets', value.sets),
-    ]) {
-      await _save(key, number);
-    }
+    return _save({
+      'activeTime': value.active,
+      'restTime': value.rest,
+      'sets': value.sets,
+    });
   }
 
-  Future<void> saveVolume(int percent) => _save('volumePercent', percent);
+  Future<void> saveVolume(int percent) => _save({'volumePercent': percent});
 
-  Future<void> _save(String key, int value) async {
-    if (preferences == null || preferences!.get(key) == value) return;
-    try {
-      await preferences!.setInt(key, value);
-    } catch (_) {
-      // Unavailable storage must not interrupt a workout or volume control.
-    }
+  Future<void> _save(Map<String, int> values) {
+    return _writes = _writes.then((_) async {
+      _pending.addAll(values);
+      try {
+        final preferences = _preferences ??= await _loader();
+        for (final entry in Map<String, int>.of(_pending).entries) {
+          final key = entry.key;
+          final value = entry.value;
+          if (_unconfirmed.contains(key) || preferences.get(key) != value) {
+            // The plugin updates its cache even when the disk write fails.
+            _unconfirmed.add(key);
+            if (!await preferences.setInt(key, value)) continue;
+          }
+          _unconfirmed.remove(key);
+          _pending.remove(key);
+        }
+      } catch (_) {
+        // Keep pending edits for the next save without interrupting a workout.
+      }
+    });
   }
 }
