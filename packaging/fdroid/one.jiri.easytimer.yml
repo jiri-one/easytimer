@@ -1,0 +1,42 @@
+Categories:
+  - Sports & Health
+License: GPL-3.0-only
+AuthorName: Jiří Němec
+WebSite: https://easytimer.jiri.one
+SourceCode: https://github.com/jiri-one/easytimer
+IssueTracker: https://github.com/jiri-one/easytimer/issues
+Changelog: https://github.com/jiri-one/easytimer/releases
+
+AutoName: EasyTimer
+
+RepoType: git
+Repo: https://github.com/jiri-one/easytimer.git
+
+Builds:
+  - versionName: 1.0.0
+    versionCode: 1
+    commit: v1.0.0
+    subdir: app
+    output: build/app/outputs/flutter-apk/app-release.apk
+    srclibs:
+      - flutter@3.47.7
+    rm:
+      - app/linux
+      - app/web
+    prebuild:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+      - sed -i -e '/signingConfig = /d' android/app/build.gradle.kts
+    scandelete:
+      - app/.pub-cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release
+    ndk: r28c
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+UpdateCheckData: app/pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
+CurrentVersion: 1.0.0
+CurrentVersionCode: 1

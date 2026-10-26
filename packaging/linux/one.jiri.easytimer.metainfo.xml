@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>one.jiri.easytimer</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only AND MIT</project_license>
+  <name>EasyTimer</name>
+  <summary>A simple interval timer for workouts and focused work</summary>
+  <summary xml:lang="cs">Jednoduchý intervalový časovač pro cvičení a práci</summary>
+  <developer id="one.jiri">
+    <name>Jiří Němec</name>
+  </developer>
+  <description>
+    <p>
+      EasyTimer is an offline interval timer for workouts, stretching and focused work.
+      Arrange timed activities and rest periods into routines and follow them with
+      a clear countdown and short sound cues.
+    </p>
+    <p xml:lang="cs">
+      EasyTimer je intervalový časovač pro cvičení, protahování a soustředěnou práci.
+      Sestavte si plán aktivit a přestávek a sledujte přehledný odpočet se zvukovými
+      upozorněními. Funguje bez připojení k internetu.
+    </p>
+    <p>
+      The application code is licensed under GPL-3.0-only. Sounds and translations
+      from Interval Timer by Matthew Nienow are licensed under MIT.
+    </p>
+  </description>
+  <launchable type="desktop-id">one.jiri.easytimer.desktop</launchable>
+  <provides>
+    <binary>easytimer</binary>
+  </provides>
+  <url type="homepage">https://easytimer.jiri.one</url>
+  <url type="bugtracker">https://github.com/jiri-one/easytimer/issues</url>
+  <url type="vcs-browser">https://github.com/jiri-one/easytimer</url>
+  <categories>
+    <category>Utility</category>
+    <category>Clock</category>
+  </categories>
+  <keywords>
+    <keyword>timer</keyword>
+    <keyword>interval</keyword>
+    <keyword>workout</keyword>
+    <keyword xml:lang="cs">časovač</keyword>
+    <keyword xml:lang="cs">cvičení</keyword>
+  </keywords>
+  <branding>
+    <color type="primary" scheme_preference="light">#387ff2</color>
+    <color type="primary" scheme_preference="dark">#387ff2</color>
+  </branding>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </recommends>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-10-26">
+      <description>
+        <p>The first EasyTimer release for Linux, the web and Android.</p>
+        <p xml:lang="cs">První vydání EasyTimeru pro Linux, web a Android.</p>
+      </description>
+    </release>
+  </releases>
+</component>

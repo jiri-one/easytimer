@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.47.7
+
+jobs:
+  app:
+    name: Analyze, test and web
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze
+      - run: flutter test
+      - run: ./tool/build_web.sh
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpulse-dev
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - working-directory: app
+        run: flutter pub get --enforce-lockfile
+      - working-directory: app
+        run: flutter build linux --release --no-pub
+
+  android:
+    name: Debug APK
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - working-directory: app
+        run: flutter pub get --enforce-lockfile
+      - working-directory: app
+        run: flutter build apk --debug --no-pub
+
+  packaging:
+    name: Desktop metadata and icons
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: sudo apt-get update && sudo apt-get install -y appstream desktop-file-utils librsvg2-bin
+      - run: desktop-file-validate packaging/linux/one.jiri.easytimer.desktop
+      - run: appstreamcli validate --no-net packaging/linux/one.jiri.easytimer.metainfo.xml
+      - run: ./branding/generate.sh
+      # Rasterization varies between the librsvg versions shipped by distributions.
+      - run: git diff --exit-code -- '*.svg' '*.xml'
+
+  flatpak:
+    name: Flatpak
+    uses: ./.github/workflows/flatpak.yml

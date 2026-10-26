@@ -1,0 +1,5 @@
+EasyTimer je jednoduchý intervalový časovač pro cvičení, protahování a soustředěnou práci. Sestavte si plán aktivit a přestávek a sledujte přehledný odpočet se zvukovými upozorněními.
+
+Vaše plány zůstávají ve vašem zařízení. Není potřeba účet ani připojení k internetu.
+
+EasyTimer je svobodný software pod licencí GPL-3.0-only. Zvuky a překlady z aplikace Interval Timer od Matthewa Nienowa jsou použity pod licencí MIT.

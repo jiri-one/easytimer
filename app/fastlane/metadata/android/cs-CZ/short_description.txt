@@ -1,0 +1,1 @@
+Intervalový časovač pro cvičení, protahování a práci. Funguje offline.

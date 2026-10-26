@@ -1,0 +1,5 @@
+EasyTimer is a simple interval timer for workouts, stretching and focused work. Arrange timed activities and rest periods into routines and follow a clear countdown with short sound cues.
+
+Your routines stay on your device. No account or internet connection is needed.
+
+EasyTimer is free software licensed under GPL-3.0-only. Sounds and translations from Interval Timer by Matthew Nienow are reused under the MIT licence.
