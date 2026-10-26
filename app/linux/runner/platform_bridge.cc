@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "native_audio.h"
+#include "native_protocol.h"
+#include "screen_inhibitor.h"
 
 namespace {
 
@@ -21,6 +23,8 @@ struct Reply {
   FlMethodCall* call;
   std::shared_ptr<std::atomic<bool>> alive;
   bool success = false;
+  bool playback = false;
+  int64_t started_at_ms = -1;
 
   ~Reply() { g_object_unref(call); }
 };
@@ -28,7 +32,15 @@ struct Reply {
 class PlatformBridge {
  public:
   PlatformBridge(GtkApplication* application, GtkWindow* window)
-      : application_(application), window_(window) {}
+      : screen_inhibitor_(
+            [application, window] {
+              return gtk_application_inhibit(application, window,
+                                             GTK_APPLICATION_INHIBIT_IDLE,
+                                             "Timer is running");
+            },
+            [application](guint cookie) {
+              gtk_application_uninhibit(application, cookie);
+            }) {}
 
   ~PlatformBridge() {
     *alive_ = false;
@@ -60,20 +72,41 @@ class PlatformBridge {
     }
     if (std::strcmp(method, "playAlarm") == 0 ||
         std::strcmp(method, "playEnd") == 0) {
+      NativeAudio::Request request;
+      if (!native_protocol::ReadRequest(args, &request)) {
+        Invalid(call,
+                "Expected an event ID, generations, planned time and native "
+                "deadline");
+        return;
+      }
       if (audio_) {
         audio_->Play(std::strcmp(method, "playAlarm") == 0
                          ? NativeAudio::Sound::kAlarm
                          : NativeAudio::Sound::kEnd,
-                     Complete(call));
+                     std::move(request), PlaybackComplete(call));
       } else {
-        RespondBool(call, false);
+        fl_method_call_respond_success(call, nullptr, nullptr);
       }
       return;
     }
-    if (std::strcmp(method, "cancelAlarm") == 0) {
-      if (audio_) audio_->Stop(true);
-    } else if (std::strcmp(method, "stop") == 0) {
-      if (audio_) audio_->Stop();
+    if (std::strcmp(method, "cancelAlarm") == 0 ||
+        std::strcmp(method, "stop") == 0 ||
+        std::strcmp(method, "beginWorkout") == 0) {
+      int64_t generation;
+      int64_t alarm_generation;
+      if (!native_protocol::ReadInt(args, "generation", &generation) ||
+          !native_protocol::ReadInt(args, "alarmGeneration",
+                                    &alarm_generation)) {
+        Invalid(call, "Expected nonnegative generations");
+        return;
+      }
+      if (audio_) {
+        if (std::strcmp(method, "beginWorkout") == 0)
+          audio_->BeginWorkout(generation, alarm_generation);
+        else
+          audio_->Stop(generation, alarm_generation,
+                       std::strcmp(method, "cancelAlarm") == 0);
+      }
     } else if (std::strcmp(method, "setVolume") == 0) {
       double gain;
       if (args && fl_value_get_type(args) == FL_VALUE_TYPE_FLOAT) {
@@ -107,24 +140,48 @@ class PlatformBridge {
   }
 
  private:
-  NativeAudio::Completion Complete(FlMethodCall* call) {
+  std::shared_ptr<Reply> NewReply(FlMethodCall* call) {
     auto reply = std::make_shared<Reply>();
     reply->call = FL_METHOD_CALL(g_object_ref(call));
     reply->alive = alive_;
-    return [reply](bool success) mutable {
+    return reply;
+  }
+
+  static void PostReply(std::shared_ptr<Reply> reply) {
+    // Flutter replies belong to GTK's thread and must not outlive the view.
+    g_idle_add_full(
+        G_PRIORITY_DEFAULT,
+        [](gpointer data) -> gboolean {
+          const auto& result = *static_cast<std::shared_ptr<Reply>*>(data);
+          if (*result->alive) {
+            if (!result->playback) {
+              RespondBool(result->call, result->success);
+            } else {
+              g_autoptr(FlValue) value =
+                  native_protocol::PlaybackResult(result->started_at_ms);
+              fl_method_call_respond_success(result->call, value, nullptr);
+            }
+          }
+          return G_SOURCE_REMOVE;
+        },
+        new std::shared_ptr<Reply>(std::move(reply)),
+        [](gpointer data) {
+          delete static_cast<std::shared_ptr<Reply>*>(data);
+        });
+  }
+
+  NativeAudio::Completion Complete(FlMethodCall* call) {
+    return [reply = NewReply(call)](bool success) mutable {
       reply->success = success;
-      // Flutter replies belong to GTK's thread and must not outlive the view.
-      g_idle_add_full(
-          G_PRIORITY_DEFAULT,
-          [](gpointer data) -> gboolean {
-            const auto& result = *static_cast<std::shared_ptr<Reply>*>(data);
-            if (*result->alive) RespondBool(result->call, result->success);
-            return G_SOURCE_REMOVE;
-          },
-          new std::shared_ptr<Reply>(std::move(reply)),
-          [](gpointer data) {
-            delete static_cast<std::shared_ptr<Reply>*>(data);
-          });
+      PostReply(std::move(reply));
+    };
+  }
+
+  NativeAudio::PlaybackCompletion PlaybackComplete(FlMethodCall* call) {
+    return [reply = NewReply(call)](int64_t started_at_ms) mutable {
+      reply->playback = true;
+      reply->started_at_ms = started_at_ms;
+      PostReply(std::move(reply));
     };
   }
 
@@ -146,27 +203,16 @@ class PlatformBridge {
                                  nullptr);
   }
 
-  void KeepAwake(bool enabled) {
-    if (enabled && inhibit_cookie_ == 0) {
-      inhibit_cookie_ = gtk_application_inhibit(application_, window_,
-                                                GTK_APPLICATION_INHIBIT_IDLE,
-                                                "Timer is running");
-    } else if (!enabled && inhibit_cookie_ != 0) {
-      gtk_application_uninhibit(application_, inhibit_cookie_);
-      inhibit_cookie_ = 0;
-    }
-  }
+  void KeepAwake(bool enabled) { screen_inhibitor_.SetEnabled(enabled); }
 
-  GtkApplication* application_;
-  GtkWindow* window_;
-  guint inhibit_cookie_ = 0;
+  ScreenInhibitor screen_inhibitor_;
   double gain_ = 1.0;
   std::shared_ptr<std::atomic<bool>> alive_ =
       std::make_shared<std::atomic<bool>>(true);
   std::unique_ptr<NativeAudio> audio_;
 };
 
-}  // namespace
+}
 
 void easytimer_platform_attach(FlView* view, GtkApplication* application,
                                GtkWindow* window) {

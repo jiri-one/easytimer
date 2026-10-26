@@ -20,19 +20,29 @@ class _NativeHarness {
       if (call.method == 'playAlarm' || call.method == 'playEnd') {
         plays.add((call.method, clock.nowMs));
       }
-      return respond(call);
+      final result = await respond(call);
+      if ((call.method == 'playAlarm' || call.method == 'playEnd') &&
+          result == true) {
+        return {'startedAtMs': clock.nowMs};
+      }
+      return result;
     });
   }
 
   final WidgetTester tester;
-  final backend = PlatformBackend();
+  late final backend = PlatformBackend(dispatchClock: dispatchClock);
   final clock = FakeClock();
+  final dispatchClock = FakeClock();
   final calls = <MethodCall>[];
   final plays = <(String, int)>[];
   FutureOr<Object?> Function(MethodCall) respond = (_) => true;
 
-  Future<void> pump([int milliseconds = 0]) =>
-      advanceClock(tester, clock, milliseconds);
+  Future<void> pump([int milliseconds = 0]) => _pump(milliseconds);
+
+  Future<void> _pump(int milliseconds) {
+    dispatchClock.nowMs += milliseconds;
+    return advanceClock(tester, clock, milliseconds);
+  }
 
   void schedule(List<SoundEvent> events) => backend.schedule(events, clock);
 }
@@ -60,7 +70,7 @@ void main() {
   _nativeTest('initialize sends the real bundled WAV bytes to native audio', (
     h,
   ) async {
-    // Match asynchronous platform replies rather than the synchronous asset stub.
+    // Future.wait requires replies after all asset futures are registered.
     h.tester.binding.defaultBinaryMessenger.setMockMessageHandler(
       'flutter/assets',
       (message) async {
@@ -372,4 +382,120 @@ void main() {
     expect(h.plays, isEmpty);
     expect(h.calls.map((call) => call.method), ['stop', 'dispose']);
   });
+  _nativeTest(
+    'native receives absolute deadlines and cancellation generations',
+    (h) async {
+      h.clock.nowMs = 50000;
+      h.backend.cancel();
+      h.schedule([const SoundEvent(SoundKind.alarm, 50000, 50049)]);
+      await h.pump();
+      expect(h.calls.first.arguments, {'generation': 1, 'alarmGeneration': 1});
+      expect(h.calls.last.arguments, {
+        'eventId': 'alarm:50000',
+        'plannedAtMs': 50000,
+        'generation': 1,
+        'alarmGeneration': 1,
+        'deadlineMs': 50049,
+      });
+    },
+  );
+
+  _nativeTest(
+    'successful starts guard planned cue times despite native latency',
+    (h) async {
+      h.respond = (call) => call.method == 'playAlarm' && h.clock.nowMs == 100
+          ? {'startedAtMs': 120}
+          : true;
+      h.schedule([
+        const SoundEvent(SoundKind.alarm, 100, 149),
+        const SoundEvent(SoundKind.alarm, 3100, 3149),
+      ]);
+      await h.pump(100);
+      await h.pump(3000);
+      expect(h.plays, [('playAlarm', 100), ('playAlarm', 3100)]);
+    },
+  );
+
+  _nativeTest('suspend rebases pending timers and skips expired cues', (
+    h,
+  ) async {
+    const events = [
+      SoundEvent(SoundKind.alarm, 2000, 2049),
+      SoundEvent(SoundKind.alarm, 7000, 7049),
+      SoundEvent(SoundKind.end, 10000, 10000),
+    ];
+    h.schedule(events);
+    h.clock.nowMs = 9000;
+    h.schedule(events);
+    await h.pump();
+    expect(h.plays, isEmpty);
+    expect(h.calls.last.method, 'cancelAlarm');
+    await h.pump(1000);
+    expect(h.plays, [('playEnd', 10000)]);
+  });
+
+  _nativeTest('a cue still valid after suspend can start immediately', (
+    h,
+  ) async {
+    const event = SoundEvent(SoundKind.alarm, 2000, 2049);
+    h.schedule([event]);
+    h.clock.nowMs = 2040;
+    h.schedule([event]);
+    await h.pump();
+    expect(h.plays, [('playAlarm', 2040)]);
+  });
+
+  _nativeTest('late completion remains delivered for the entire workout', (
+    h,
+  ) async {
+    const event = SoundEvent(SoundKind.end, 10000, 10000);
+    h.schedule([event]);
+    h.clock.nowMs = 60000;
+    h.schedule([event]);
+    h.backend.cancel(keepEnd: true);
+    await h.pump();
+    expect(h.plays, [('playEnd', 60000)]);
+    await h.pump(20001);
+    h.schedule([event, const SoundEvent(SoundKind.end, 80000, 80000)]);
+    await h.pump();
+    expect(h.plays, [('playEnd', 60000)]);
+    h.backend.cancel();
+    h.schedule([event]);
+    await h.pump();
+    expect(h.plays, [('playEnd', 60000), ('playEnd', 80001)]);
+  });
+  for (final jitter in [0, 1, 23, 49]) {
+    _nativeTest(
+      'rest=3 preserves every planned beep with $jitter ms callback jitter',
+      (h) async {
+        final engine = TimerEngine(h.clock)
+          ..start(const WorkoutOptions(active: 5, rest: 3, sets: 2));
+        h.schedule(engine.soundsBetween(0, 300000));
+        await h.pump(2000);
+        h.clock.nowMs = 7000 + jitter;
+        h.dispatchClock.nowMs = 7000;
+        await h.tester.pump(const Duration(milliseconds: 5000));
+        h.clock.nowMs = 10000;
+        h.dispatchClock.nowMs = 10000;
+        await h.tester.pump(const Duration(milliseconds: 3000));
+        expect(h.plays, [
+          ('playAlarm', 2000),
+          ('playAlarm', 7000 + jitter),
+          ('playAlarm', 10000),
+        ]);
+      },
+    );
+  }
+
+  _nativeTest(
+    'Start invalidates old timers with the finish-preserving native method',
+    (h) async {
+      h.schedule([const SoundEvent(SoundKind.alarm, 1000, 1049)]);
+      h.backend.beginWorkout();
+      await h.pump(1000);
+      expect(h.plays, isEmpty);
+      expect(h.calls.single.method, 'beginWorkout');
+      expect(h.calls.single.arguments, {'generation': 1, 'alarmGeneration': 1});
+    },
+  );
 }

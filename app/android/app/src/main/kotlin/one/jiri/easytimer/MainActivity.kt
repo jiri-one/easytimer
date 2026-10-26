@@ -8,6 +8,7 @@ import android.media.SoundPool
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -29,6 +30,8 @@ class MainActivity : FlutterActivity() {
     private val temporarySounds = mutableListOf<File>()
     private val handler = Handler(Looper.getMainLooper())
     private val loadTimeout = Runnable { releaseAudio() }
+    // Alarm deadlines must still expire while the device sleeps.
+    private val playback = PlaybackPolicy(SystemClock::elapsedRealtime)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,17 +63,11 @@ class MainActivity : FlutterActivity() {
     private fun handleCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "initialize" -> initialize(call.arguments, result)
-            "playAlarm" -> result.success(play(end = false))
-            "playEnd" -> result.success(play(end = true))
-            "cancelAlarm" -> {
-                if (alarmStream != 0) soundPool?.stop(alarmStream)
-                alarmStream = 0
-                result.success(null)
-            }
-            "stop" -> {
-                stopAudio()
-                result.success(null)
-            }
+            "playAlarm" -> play(call.arguments, end = false, result)
+            "playEnd" -> play(call.arguments, end = true, result)
+            "beginWorkout" -> beginWorkout(call.arguments, result)
+            "cancelAlarm" -> cancel(call.arguments, alarmOnly = true, result)
+            "stop" -> cancel(call.arguments, alarmOnly = false, result)
             "setVolume" -> {
                 val value = call.arguments as? Number
                 if (value == null || !value.toDouble().isFinite()) {
@@ -158,20 +155,69 @@ class MainActivity : FlutterActivity() {
         return pool.load(file.absolutePath, 1)
     }
 
-    private fun play(end: Boolean): Boolean {
-        val pool = soundPool ?: return false
-        if (!ready) return false
-        val stream = pool.play(if (end) endSound else alarmSound, gain, gain, 1, if (end) 2 else 0, 1f)
-        if (stream == 0) return false
-        alarmStream = if (end) 0 else stream
-        endStream = if (end) stream else 0
-        return true
+    private fun play(arguments: Any?, end: Boolean, result: MethodChannel.Result) {
+        val request = PlaybackRequest.fromArguments(arguments)
+        if (request == null) {
+            result.error("invalid_arguments", "Expected eventId, generation, alarmGeneration, plannedAtMs and deadlineMs", null)
+            return
+        }
+        val pending = playback.receive(request, end)
+        if (pending == null) {
+            result.success(null)
+            return
+        }
+        val pool = soundPool
+        val sample = if (end) endSound else alarmSound
+        val loops = if (end) 2 else 0
+        val startedAt = playback.start(pending) {
+            if (pool == null || !ready) return@start false
+            val stream = try {
+                pool.play(sample, gain, gain, 1, loops, 1f)
+            } catch (_: RuntimeException) {
+                return@start false
+            }
+            if (stream == 0) return@start false
+            alarmStream = if (end) 0 else stream
+            endStream = if (end) stream else 0
+            true
+        }
+        result.success(startedAt?.let { mapOf("startedAtMs" to it) })
+    }
+
+    private fun beginWorkout(arguments: Any?, result: MethodChannel.Result) {
+        val generation = PlaybackGeneration.fromArguments(arguments)
+        if (generation == null) {
+            result.error("invalid_arguments", "Expected generation and alarmGeneration", null)
+            return
+        }
+        playback.beginWorkout(generation, ::stopAlarm)
+        result.success(null)
+    }
+
+    private fun cancel(arguments: Any?, alarmOnly: Boolean, result: MethodChannel.Result) {
+        val generation = PlaybackGeneration.fromArguments(arguments)
+        if (generation == null) {
+            result.error("invalid_arguments", "Expected generation and alarmGeneration", null)
+            return
+        }
+        playback.cancel(generation, alarmOnly) {
+            if (alarmOnly) {
+                stopAlarm()
+            } else {
+                stopAudio()
+            }
+        }
+        result.success(null)
+    }
+
+    private fun stopAlarm() {
+        if (alarmStream != 0) soundPool?.stop(alarmStream)
+        alarmStream = 0
     }
 
     private fun stopAudio() {
-        if (alarmStream != 0) soundPool?.stop(alarmStream)
+        stopAlarm()
         if (endStream != 0) soundPool?.stop(endStream)
-        alarmStream = 0
         endStream = 0
     }
 
@@ -181,6 +227,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun releaseAudio() {
+        playback.invalidate()
         handler.removeCallbacks(loadTimeout)
         ready = false
         stopAudio()
