@@ -17,24 +17,22 @@ app/src/main/res/raw/ in the original project:
   app/assets/audio/hit.wav
   app/assets/audio/threesecbeep.wav
 
-Roboto Mono
------------
-Copyright 2015 The Roboto Mono Project Authors
-(https://github.com/googlefonts/robotomono)
-License: SIL Open Font License, Version 1.1
-Full license: app/assets/licenses/RobotoMono-OFL.txt
-Source: https://github.com/googlefonts/RobotoMono
-Reference revision: 895ec691990d041dd727c7b5afa3ce56525d98e6
+Droid Sans Mono
+---------------
+Digitized data copyright © 2007, Google Corporation.
+Copyright (c) 2005-2008, The Android Open Source Project
+License: Apache License, Version 2.0
+Full license: app/assets/licenses/DroidSansMono-Apache-2.0.txt
+Source: Android Open Source Project, android-15.0.0_r1
 
-Unmodified static TrueType fonts, version 3.001, family "Roboto Mono":
-  app/assets/fonts/RobotoMono-Regular.ttf (weight 400)
-  app/assets/fonts/RobotoMono-Bold.ttf (weight 700)
+Unmodified Droid Sans Mono, Android's native monospace typeface:
+  app/assets/fonts/DroidSansMono.ttf
+SHA-256: db19a1fdaba41cc4a2fec0330e5c15e71c6dd68a3ef074f4f28268828b45c862
 
-The same bundled font files are registered under Flutter's default "Roboto"
-alias to prevent the web renderer from downloading a fallback font.
+The same bundled file is registered under Flutter's default "Roboto" alias
+so all build variants use local fonts without contacting a font service.
 
-Original font files:
-https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/fonts/ttf/RobotoMono-Regular.ttf
-https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/fonts/ttf/RobotoMono-Bold.ttf
+Original font:
+https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-15.0.0_r1/data/fonts/DroidSansMono.ttf
 Original license:
-https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/OFL.txt
+https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-15.0.0_r1/data/fonts/NOTICE

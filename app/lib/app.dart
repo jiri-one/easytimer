@@ -47,7 +47,7 @@ class _EasyTimerAppState extends State<EasyTimerApp>
     final dark = brightness == Brightness.dark;
     return ThemeData(
       brightness: brightness,
-      fontFamily: 'RobotoMono',
+      fontFamily: 'DroidSansMono',
       scaffoldBackgroundColor: dark
           ? const Color(0xff303030)
           : const Color(0xfffafafa),
@@ -59,6 +59,9 @@ class _EasyTimerAppState extends State<EasyTimerApp>
       highlightColor: Colors.transparent,
       hoverColor: Colors.transparent,
       shadowColor: Colors.transparent,
+      iconTheme: IconThemeData(
+        color: dark ? const Color(0xffc1c1c1) : const Color(0xff6f6f6f),
+      ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: _InstantPageTransition(),

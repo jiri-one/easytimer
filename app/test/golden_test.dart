@@ -35,9 +35,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    final font = FontLoader('RobotoMono')
-      ..addFont(rootBundle.load('assets/fonts/RobotoMono-Regular.ttf'))
-      ..addFont(rootBundle.load('assets/fonts/RobotoMono-Bold.ttf'));
+    final font = FontLoader('DroidSansMono')
+      ..addFont(rootBundle.load('assets/fonts/DroidSansMono.ttf'));
     final icons = FontLoader('MaterialIcons')
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
     await Future.wait([font.load(), icons.load()]);
@@ -61,12 +60,13 @@ void main() {
     String locale = 'en',
     bool dark = false,
     bool paused = false,
+    double volume = 1,
   }) async {
     tester.view.devicePixelRatio = dpr;
     tester.view.physicalSize = size;
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'volume': volume});
     final clock = _Clock();
     final controller = WorkoutController(
       await TimerSettings.load(),
@@ -122,8 +122,29 @@ void main() {
     }
   }
 
+  for (final dark in [false, true]) {
+    testWidgets('native timer reference ${dark ? 'dark' : 'light'}', (
+      tester,
+    ) async {
+      await capture(
+        tester,
+        'native_timer_${dark ? 'dark' : 'light'}',
+        const Size(618, 985),
+        1.5,
+        timer: true,
+        time: 5000,
+        dark: dark,
+        volume: .6,
+      );
+    });
+  }
+  testWidgets('native settings reference', (tester) async {
+    await capture(tester, 'native_settings', const Size(618, 1125), 1.5);
+  });
+
   for (final (name, time, locale, dark, paused) in [
     ('active', 5000, 'en', false, false),
+    ('active_dark', 5000, 'en', true, false),
     ('rest_dark', 50000, 'cs', true, false),
     ('paused', 8500, 'fr', false, true),
   ]) {

@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../timer_engine.dart';
 import '../workout_controller.dart';
 import 'controls.dart';
+import 'native_style.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.controller});
@@ -68,15 +69,27 @@ class SettingsScreenState extends State<SettingsScreen> {
     final strings = AppLocalizations.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
+        final screen = MediaQuery.sizeOf(context);
+        final baseHeight =
+            [
+              strings.activeTimeLabel,
+              strings.restTimeLabel,
+              strings.setsLabel,
+            ].fold<double>(
+              0,
+              (height, label) =>
+                  height + NativeText.measure(context, label, 20, screen.width),
+            ) +
+            56 * 3 +
+            20 * 2 +
+            30 +
+            100;
         final scale = math
-            .min(
-              2.5,
-              math.min(
-                .8 * constraints.maxWidth / 200,
-                .85 * constraints.maxHeight / 446,
-              ),
-            )
-            .clamp(.65, 2.5);
+            .min(.8 * screen.width / 200, .85 * screen.height / baseHeight)
+            .clamp(1.0, 2.5);
+        double dimension(double value) =>
+            nativeDimension(context, value, scale);
+        final dark = Theme.of(context).brightness == Brightness.dark;
         Widget field(
           String label,
           TextEditingController controller,
@@ -88,81 +101,85 @@ class SettingsScreenState extends State<SettingsScreen> {
         }) => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            NativeText(label, size: 20 * scale),
             SizedBox(
-              height: 30 * scale,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 20 * scale,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 200 * scale,
-              height: 56 * scale,
+              width: dimension(200),
+              height: dimension(56),
               child: Row(
                 children: [
                   IconButton(
                     onPressed: subtract,
                     tooltip: less,
-                    padding: EdgeInsets.all(16 * scale),
+                    padding: EdgeInsets.all(dimension(16)),
                     constraints: BoxConstraints.tightFor(
-                      width: 56 * scale,
-                      height: 56 * scale,
+                      width: dimension(56),
+                      height: dimension(56),
                     ),
-                    iconSize: 24 * scale,
+                    iconSize: dimension(24),
                     icon: const Icon(Icons.remove),
                   ),
                   Expanded(
-                    child: TextField(
-                      key: ValueKey(label),
-                      controller: controller,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      cursorOpacityAnimates: false,
-                      showCursor: false,
-                      style: TextStyle(fontSize: 20 * scale),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(4),
-                      ],
-                      decoration: InputDecoration(
-                        hintText: hint,
-                        hintFadeDuration: Duration.zero,
-                        hintStyle: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface
-                              .withValues(alpha: .65),
+                    child: Semantics(
+                      label: label,
+                      child: TextField(
+                        key: ValueKey(label),
+                        controller: controller,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        cursorOpacityAnimates: false,
+                        showCursor: false,
+                        style: TextStyle(
+                          fontFamily: 'DroidSansMono',
+                          fontSize: 18 * scale,
+                          color: dark
+                              ? const Color(0xffeeeeee)
+                              : const Color(0xff212121),
                         ),
-                        contentPadding: EdgeInsets.symmetric(
-                          vertical: 8 * scale,
-                        ),
-                        isDense: true,
-                        enabledBorder: const UnderlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xff6f6f6f)),
-                        ),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(
-                            color: Theme.of(context).colorScheme.onSurface,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(4),
+                        ],
+                        decoration: InputDecoration(
+                          hintText: hint,
+                          hintFadeDuration: Duration.zero,
+                          hintStyle: TextStyle(
+                            color: dark
+                                ? const Color(0xffcccccc)
+                                : const Color(0xff6f6f6f),
+                          ),
+                          contentPadding: EdgeInsets.symmetric(
+                            vertical: dimension(8),
+                          ),
+                          isDense: true,
+                          enabledBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(
+                              color: dark
+                                  ? const Color(0xffaaaaaa)
+                                  : const Color(0xff525252),
+                            ),
+                          ),
+                          focusedBorder: UnderlineInputBorder(
+                            borderSide: BorderSide(
+                              color: dark
+                                  ? const Color(0xffcccccc)
+                                  : const Color(0xff525252),
+                            ),
                           ),
                         ),
+                        onChanged: (_) => _save(),
+                        onSubmitted: (_) => start(),
                       ),
-                      onChanged: (_) => _save(),
-                      onSubmitted: (_) => start(),
                     ),
                   ),
                   IconButton(
                     onPressed: add,
                     tooltip: more,
-                    padding: EdgeInsets.all(16 * scale),
+                    padding: EdgeInsets.all(dimension(16)),
                     constraints: BoxConstraints.tightFor(
-                      width: 56 * scale,
-                      height: 56 * scale,
+                      width: dimension(56),
+                      height: dimension(56),
                     ),
-                    iconSize: 24 * scale,
+                    iconSize: dimension(24),
                     icon: const Icon(Icons.add),
                   ),
                 ],
@@ -185,7 +202,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                     () => _change(_active, _defaults.active, 5, -5),
                     () => _change(_active, _defaults.active, 5, 5),
                   ),
-                  SizedBox(height: 20 * scale),
+                  SizedBox(height: dimension(20)),
                   field(
                     strings.restTimeLabel,
                     _rest,
@@ -194,7 +211,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                     () => _change(_rest, _defaults.rest, 0, -5),
                     () => _change(_rest, _defaults.rest, 0, 5),
                   ),
-                  SizedBox(height: 20 * scale),
+                  SizedBox(height: dimension(20)),
                   field(
                     strings.setsLabel,
                     _sets,
@@ -204,11 +221,11 @@ class SettingsScreenState extends State<SettingsScreen> {
                     () => _change(_sets, 0, 0, 1, emptyZero: true),
                     hint: '∞',
                   ),
-                  SizedBox(height: 30 * scale),
+                  SizedBox(height: dimension(30)),
                   CircleControl(
                     label: strings.start,
                     symbol: ControlSymbol.play,
-                    size: 100 * scale,
+                    size: dimension(100),
                     onPressed: start,
                   ),
                 ],

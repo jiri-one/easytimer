@@ -6,6 +6,8 @@ import '../l10n/app_localizations.dart';
 import '../timer_engine.dart';
 import '../workout_controller.dart';
 import 'controls.dart';
+import 'native_style.dart';
+import 'volume_control.dart';
 
 class TimerScreen extends StatelessWidget {
   const TimerScreen({super.key, required this.controller});
@@ -17,65 +19,52 @@ class TimerScreen extends StatelessWidget {
     final strings = AppLocalizations.of(context);
     final value = controller.display;
     final (label, color) = switch (value.phase) {
-      TimerPhase.prepare => (strings.prepareTimeLabel, const Color(0xff6f6f6f)),
+      TimerPhase.prepare => (
+        strings.prepareTimeLabel,
+        nativeTextColor(context),
+      ),
       TimerPhase.active => (strings.activeTimeLabel, const Color(0xff1a9f0b)),
       TimerPhase.rest => (strings.restTimeLabel, const Color(0xffab0606)),
     };
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = math.min(constraints.maxWidth, 640.0);
-        final height = constraints.maxHeight;
-        final typeScale = math.min(width / 400, height / 690).clamp(.55, 1.6);
-        final textHeight = 528 * typeScale;
-        final buttonSize = math.max(
+        final status = label.toUpperCase();
+        final set = strings.setCount(math.max(1, value.set));
+        final seconds = '${value.seconds}';
+        final gap = nativeDimension(context, 20);
+        final bottomGap = nativeDimension(context, 28);
+        final textHeight =
+            NativeText.measure(context, strings.setLabel, 24, width) +
+            NativeText.measure(context, set, 64, width) +
+            NativeText.measure(context, status, 65, width, bold: true) +
+            NativeText.measure(context, seconds, 150, width, bold: true) +
+            gap * 2 +
+            bottomGap;
+        final size = math.max(
           64.0,
           math.min(
             (width - 126) / 2,
-            math.min(200.0, height - textHeight - 24),
+            math.min(200.0, constraints.maxHeight - textHeight),
           ),
         );
-        Widget text(
-          String value,
-          double size,
-          double boxHeight, {
-          Color? color,
-          FontWeight weight = FontWeight.normal,
-        }) => SizedBox(
-          height: boxHeight * typeScale,
-          width: width - 32,
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: size * typeScale,
-                fontWeight: weight,
-                color: color,
-                height: 1.15,
-              ),
-            ),
-          ),
-        );
+        final density = MediaQuery.devicePixelRatioOf(context);
+        final buttonSize = (size * density).round() / density;
         return Center(
           child: SingleChildScrollView(
             child: SizedBox(
               width: width,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  text(strings.setLabel, 24, 36),
-                  text(strings.setCount(math.max(1, value.set)), 64, 88),
-                  SizedBox(height: 20 * typeScale),
-                  text(
-                    label.toUpperCase(),
-                    65,
-                    82,
-                    color: color,
-                    weight: FontWeight.bold,
-                  ),
-                  SizedBox(height: 20 * typeScale),
-                  text('${value.seconds}', 150, 154, weight: FontWeight.bold),
-                  SizedBox(height: 28 * typeScale),
+                  NativeText(strings.setLabel, size: 24),
+                  NativeText(set, size: 64),
+                  SizedBox(height: gap),
+                  NativeText(status, size: 65, color: color, bold: true),
+                  SizedBox(height: gap),
+                  NativeText(seconds, size: 150, bold: true),
+                  SizedBox(height: bottomGap),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -89,41 +78,21 @@ class TimerScreen extends StatelessWidget {
                         size: buttonSize,
                         onPressed: controller.togglePause,
                       ),
-                      const SizedBox(width: 30),
+                      SizedBox(width: nativeDimension(context, 30)),
                       CircleControl(
                         label: strings.stop,
                         symbol: ControlSymbol.stop,
                         size: buttonSize,
                         onPressed: controller.stop,
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: nativeDimension(context, 16)),
                       SizedBox(
-                        width: 48,
+                        width: nativeDimension(context, 48),
                         height: buttonSize,
-                        child: RotatedBox(
-                          quarterTurns: 3,
-                          child: SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 3,
-                              activeTrackColor: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface,
-                              inactiveTrackColor: const Color(0xff6f6f6f),
-                              thumbColor: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface,
-                              overlayShape: SliderComponentShape.noOverlay,
-                              thumbShape: _SpeakerThumb(controller.volume == 0),
-                              showValueIndicator: ShowValueIndicator.never,
-                            ),
-                            child: Slider(
-                              value: controller.volume,
-                              divisions: 100,
-                              semanticFormatterCallback: (value) =>
-                                  '${strings.volume}: ${(value * 100).round()}%',
-                              onChanged: controller.changeVolume,
-                            ),
-                          ),
+                        child: VolumeControl(
+                          label: strings.volume,
+                          value: controller.volume,
+                          onChanged: controller.changeVolume,
                         ),
                       ),
                     ],
@@ -135,52 +104,5 @@ class TimerScreen extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-class _SpeakerThumb extends SliderComponentShape {
-  const _SpeakerThumb(this.muted);
-
-  final bool muted;
-
-  @override
-  Size getPreferredSize(bool isEnabled, bool isDiscrete) => const Size(24, 24);
-
-  @override
-  void paint(
-    PaintingContext context,
-    Offset center, {
-    required Animation<double> activationAnimation,
-    required Animation<double> enableAnimation,
-    required bool isDiscrete,
-    required TextPainter labelPainter,
-    required RenderBox parentBox,
-    required SliderThemeData sliderTheme,
-    required TextDirection textDirection,
-    required double value,
-    required double textScaleFactor,
-    required Size sizeWithOverflow,
-  }) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(
-          (muted ? Icons.volume_off : Icons.volume_up).codePoint,
-        ),
-        style: TextStyle(
-          fontFamily: 'MaterialIcons',
-          fontSize: 24,
-          color: sliderTheme.thumbColor,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    context.canvas.save();
-    context.canvas.translate(center.dx, center.dy);
-    context.canvas.rotate(math.pi / 2);
-    painter.paint(
-      context.canvas,
-      Offset(-painter.width / 2, -painter.height / 2),
-    );
-    context.canvas.restore();
   }
 }

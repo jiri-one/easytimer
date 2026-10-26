@@ -3,6 +3,9 @@ import 'package:easytimer/platform/timer_platform.dart';
 import 'package:easytimer/settings.dart';
 import 'package:easytimer/timer_engine.dart';
 import 'package:easytimer/workout_controller.dart';
+import 'package:easytimer/ui/controls.dart';
+import 'package:easytimer/ui/native_style.dart';
+import 'package:easytimer/ui/volume_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -194,7 +197,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
     expect(controller.showingTimer, isTrue);
-    await tester.tap(find.byType(Slider));
+    await tester.tap(find.byType(VolumeControl));
     await tester.pump();
     final before = controller.volume;
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -204,6 +207,81 @@ void main() {
     await tester.pump();
     expect(controller.display.mode, TimerMode.paused);
   });
+
+  timerTest(
+    'volume track keeps a 48 dp touch target and reaches both endpoints',
+    (tester) async {
+      await mount(tester);
+      await tester.tap(find.bySemanticsLabel('Start'));
+      await tester.pump();
+      final slider = find.byType(VolumeControl);
+      final bounds = tester.getRect(slider);
+      expect(bounds.width, greaterThanOrEqualTo(48));
+      expect(bounds.height, greaterThanOrEqualTo(64));
+      await tester.tapAt(Offset(bounds.center.dx, bounds.bottom - 16));
+      await tester.pump();
+      expect(controller.volume, 0);
+      await tester.tapAt(Offset(bounds.center.dx, bounds.top + 16));
+      await tester.pump();
+      expect(controller.volume, 1);
+    },
+  );
+
+  timerTest(
+    'timer uses the native type sizes and remaining-height button limit',
+    (tester) async {
+      tester.view.physicalSize = const Size(412, 657);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await mount(tester);
+      controller.start(const WorkoutOptions());
+      clock.nowMs = 5000;
+      controller.refresh();
+      await tester.pump();
+      final digits = tester.widget<Text>(find.text('45'));
+      expect(digits.style!.fontSize, 150);
+      expect(digits.style!.color, const Color(0xff6f6f6f));
+      expect(digits.style!.fontFamily, 'DroidSansMono');
+      final buttons = tester.widgetList<CircleControl>(
+        find.byType(CircleControl),
+      );
+      expect(buttons.every((button) => button.size == 143), isTrue);
+      expect(find.byType(NativeText), findsNWidgets(4));
+    },
+  );
+
+  timerTest(
+    'volume drags and keyboard adjustment remain immediate and accessible',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      addTearDown(semantics.dispose);
+      await mount(tester);
+      controller.start(const WorkoutOptions());
+      await tester.pump();
+      final slider = find.byType(VolumeControl);
+      final bounds = tester.getRect(slider);
+      final drag = await tester.startGesture(
+        Offset(bounds.center.dx, bounds.bottom - 16),
+      );
+      await drag.moveTo(Offset(bounds.center.dx, bounds.top + 16));
+      await drag.up();
+      await tester.pump();
+      expect(controller.volume, 1);
+      final paintedSlider = find.descendant(
+        of: slider,
+        matching: find.byType(CustomPaint),
+      );
+      Focus.of(tester.element(paintedSlider)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(controller.volume, .95);
+      final node = tester.getSemantics(find.bySemanticsLabel('Volume'));
+      expect(node.getSemanticsData().label, 'Volume');
+      expect(node.getSemanticsData().value, '95%');
+    },
+  );
 
   for (final (locale, active) in [
     ('cs', 'Aktivita'),

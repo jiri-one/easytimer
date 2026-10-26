@@ -76,6 +76,6 @@ EasyTimer is licensed under [GPL-3.0](LICENSE).
 The original timer behaviour, layout, translations and the unmodified
 `hit.wav` and `threesecbeep.wav` assets come from Interval Timer, © 2023 Matthew
 Nienow, under the MIT licence. The generic monospace typography is supplied by
-bundled Roboto Mono fonts, © 2015 The Roboto Mono Project Authors, under SIL OFL
-1.1. Fonts are never fetched at runtime. Full attribution, pinned sources and
+bundled Droid Sans Mono, © 2007 Google Corporation, under the Apache License
+2.0. Fonts are never fetched at runtime. Full attribution, pinned sources and
 third-party licence texts are listed in [NOTICE](NOTICE).

@@ -10,9 +10,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await TimerSettings.load();
   final platform = createTimerPlatform();
-  final fonts = FontLoader('RobotoMono')
-    ..addFont(rootBundle.load('assets/fonts/RobotoMono-Regular.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/RobotoMono-Bold.ttf'));
+  final fonts = FontLoader('DroidSansMono')
+    ..addFont(rootBundle.load('assets/fonts/DroidSansMono.ttf'));
   await Future.wait([platform.initialize(), fonts.load()]);
   runApp(EasyTimerApp(controller: WorkoutController(settings, platform)));
 }
