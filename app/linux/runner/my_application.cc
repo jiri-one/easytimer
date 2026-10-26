@@ -6,6 +6,7 @@
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
+#include "platform_bridge.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -45,14 +46,14 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "easytimer");
+    gtk_header_bar_set_title(header_bar, "EasyTimer");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "easytimer");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  gtk_window_set_title(window, "EasyTimer");
+  gtk_window_set_default_size(window, 420, 760);
+  gtk_window_set_resizable(window, TRUE);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
@@ -66,6 +67,7 @@ static void my_application_activate(GApplication* application) {
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
+  easytimer_platform_attach(view, GTK_APPLICATION(application), window);
 
   // Show the window when Flutter renders.
   // Requires the view to be realized so we can start rendering.
