@@ -23,9 +23,9 @@ jobs:
       - run: flutter gen-l10n
       - run: git diff --exit-code -- lib/l10n/
       - run: flutter analyze
-      - run: flutter test
-      - run: flutter test --platform chrome test/web_platform_test.dart
-      - run: dbus-run-session -- sh -c "EASYTIMER_PRIVATE_DBUS=\"\$DBUS_SESSION_BUS_ADDRESS\" flutter test --no-pub test/wakelock_linux_test.dart"
+      - run: flutter test --concurrency=4
+      - run: flutter test --concurrency=4 --platform chrome test/web_platform_test.dart
+      - run: dbus-run-session -- sh -c "EASYTIMER_PRIVATE_DBUS=\"\$DBUS_SESSION_BUS_ADDRESS\" flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart"
 
   app:
     name: Web app

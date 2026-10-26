@@ -34,9 +34,9 @@ appstreamcli validate --no-net packaging/linux/one.jiri.easytimer.metainfo.xml
 cd app
 flutter pub get --enforce-lockfile
 flutter analyze
-flutter test --no-pub
-flutter test --no-pub --platform chrome test/web_platform_test.dart
-dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --no-pub test/wakelock_linux_test.dart'
+flutter test --concurrency=4 --no-pub
+flutter test --concurrency=4 --no-pub --platform chrome test/web_platform_test.dart
+dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart'
 ./tool/build_web.sh
 flutter build linux --release
 flutter build apk --release
