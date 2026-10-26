@@ -206,8 +206,7 @@ The manifest follows EasyDict: Freedesktop **26.08**, **llvm22** and Flutter
 other sources so that the actual build runs without network access. The app has
 Wayland, fallback X11, IPC, DRI and PulseAudio access; it has no network access.
 Custom licences remain in `/app/easytimer/data/flutter_assets/assets/licenses/`.
-`/app/share/licenses/one.jiri.easytimer/` is a symlink to that directory, so each
-custom notice has one physical copy. Flutter's generated dependency notices
+Each custom notice has one physical copy. Flutter's generated dependency notices
 remain at `/app/easytimer/data/flutter_assets/NOTICES.Z`.
 
 For the same local-commit build used by CI, first have the Freedesktop Platform,
