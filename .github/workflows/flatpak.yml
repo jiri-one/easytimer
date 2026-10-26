@@ -1,0 +1,43 @@
+name: Flatpak build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Offline source build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: sudo apt-get update && sudo apt-get install -y flatpak flatpak-builder python3-venv
+      - run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive flathub org.freedesktop.Platform//26.08 org.freedesktop.Sdk//26.08 org.freedesktop.Sdk.Extension.llvm22//26.08
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: TheAppgineer/flatpak-flutter
+          ref: e59a96fcb0fcf48fcd46e8134cae64c26fdc3290
+          path: .flatpak-flutter-tool
+      - name: Manifest generator
+        run: |
+          python3 -m venv "$RUNNER_TEMP/flatpak-flutter-venv"
+          "$RUNNER_TEMP/flatpak-flutter-venv/bin/pip" install -r .flatpak-flutter-tool/requirements.txt
+          echo "$RUNNER_TEMP/flatpak-flutter-venv/bin" >> "$GITHUB_PATH"
+      - name: Build bundle
+        env:
+          FLATPAK_FLUTTER: ${{ github.workspace }}/.flatpak-flutter-tool/flatpak-flutter.py
+        run: ./packaging/flatpak/build.sh
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_TYPE" != tag ]; then version="${GITHUB_SHA:0:7}"; fi
+          mkdir -p dist
+          cp app/build/flatpak/easytimer.flatpak "dist/easytimer-$version-linux-x86_64.flatpak"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: flatpak-x86_64
+          path: dist/*.flatpak
+          if-no-files-found: error
