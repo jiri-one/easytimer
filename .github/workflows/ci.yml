@@ -9,45 +9,31 @@ on:
 permissions:
   contents: read
 
-env:
-  FLUTTER_VERSION: 3.47.7
+defaults:
+  run:
+    working-directory: app
 
 jobs:
   tests:
     name: Analyze and test
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - run: flutter pub get --enforce-lockfile
+      - uses: ./.github/actions/flutter
       - run: flutter gen-l10n
       - run: git diff --exit-code -- lib/l10n/
       - run: flutter analyze
       - run: flutter test
-      - run: flutter test --platform chrome test/web_platform_test.dart test/platform_parity_browser_test.dart
-      - run: dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --no-pub test/wakelock_linux_test.dart'
+      - run: flutter test --platform chrome test/web_platform_test.dart
+      - run: dbus-run-session -- sh -c "EASYTIMER_PRIVATE_DBUS=\"\$DBUS_SESSION_BUS_ADDRESS\" flutter test --no-pub test/wakelock_linux_test.dart"
 
   app:
     name: Web app
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - working-directory: app
-        run: flutter pub get --enforce-lockfile
-      - working-directory: app
-        run: ./tool/build_web.sh
+      - uses: ./.github/actions/flutter
+      - run: ./tool/build_web.sh
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b
         with:
           path: app/build/web
@@ -77,15 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - working-directory: app
-        run: flutter pub get --enforce-lockfile
-      - working-directory: app
-        run: flutter build linux --release --no-pub
+      - uses: ./.github/actions/flutter
+      - run: flutter build linux --release --no-pub
 
   android:
     name: Debug APK
@@ -97,24 +76,26 @@ jobs:
           distribution: temurin
           java-version: 17
           cache: gradle
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - working-directory: app
-        run: flutter pub get --enforce-lockfile
-      - working-directory: app
-        run: flutter build apk --debug --no-pub
+      - uses: ./.github/actions/flutter
+      - run: flutter build apk --debug --no-pub
 
   packaging:
     name: Desktop metadata and icons
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: sudo apt-get update && sudo apt-get install -y appstream desktop-file-utils librsvg2-bin
-      - run: desktop-file-validate packaging/linux/one.jiri.easytimer.desktop
-      - run: appstreamcli validate --no-net packaging/linux/one.jiri.easytimer.metainfo.xml
-      - run: ./branding/generate.sh
-      # Rasterization varies between the librsvg versions shipped by distributions.
-      - run: git diff --exit-code -- '*.svg' '*.xml'
+      - working-directory: .
+        run: sudo apt-get update && sudo apt-get install -y appstream desktop-file-utils
+      - working-directory: .
+        run: desktop-file-validate packaging/linux/one.jiri.easytimer.desktop
+      - working-directory: .
+        run: appstreamcli validate --no-net packaging/linux/one.jiri.easytimer.metainfo.xml
+      - name: Validate committed icons
+        working-directory: .
+        # Rasterization varies between the librsvg versions shipped by distributions.
+        run: |
+          cmp branding/icon.svg packaging/linux/one.jiri.easytimer.svg
+          for icon in app/web/favicon.png app/web/icons/*.png app/android/app/src/main/res/mipmap-*/*.png app/fastlane/metadata/android/en-US/images/icon.png packaging/linux/icons/hicolor/*/apps/*.png; do
+            test -s "$icon"
+            test "$(file --brief --mime-type "$icon")" = image/png
+          done

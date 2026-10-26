@@ -18,9 +18,7 @@ val releaseKeyAlias = signingValue("keyAlias", "ANDROID_KEY_ALIAS")
 val releaseKeyPassword = signingValue("keyPassword", "ANDROID_KEY_PASSWORD")
 val signingValues = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
 val hasReleaseKey = signingValues.all { it != null }
-val isTagBuild = System.getenv("GITHUB_REF_TYPE") == "tag" ||
-    System.getenv("GITHUB_REF")?.startsWith("refs/tags/") == true ||
-    System.getenv("EASYTIMER_REQUIRE_RELEASE_SIGNING") == "true"
+val isTagBuild = System.getenv("GITHUB_REF_TYPE") == "tag"
 
 if (signingValues.any { it != null } && !hasReleaseKey) {
     throw GradleException("Release signing is incomplete; provide all four properties or ANDROID_* variables.")

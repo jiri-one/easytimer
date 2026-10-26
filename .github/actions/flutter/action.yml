@@ -1,0 +1,34 @@
+name: Flutter
+description: Set up the pinned Flutter SDK and locked dependencies
+inputs:
+  flutter-version:
+    description: Flutter SDK version
+    default: '3.47.7'
+runs:
+  using: composite
+  steps:
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      if: runner.arch != 'ARM64'
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: stable
+        cache: true
+    - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+      if: runner.arch == 'ARM64'
+      with:
+        path: ${{ runner.temp }}/flutter
+        key: flutter-${{ runner.os }}-${{ runner.arch }}-${{ inputs.flutter-version }}
+    - name: Flutter SDK for ARM
+      if: runner.arch == 'ARM64'
+      shell: bash
+      env:
+        FLUTTER_VERSION: ${{ inputs.flutter-version }}
+      # Flutter publishes no Linux ARM SDK archive.
+      run: |
+        if [ ! -d "$RUNNER_TEMP/flutter/.git" ]; then
+          git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+        fi
+        echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+    - shell: bash
+      working-directory: ${{ github.workspace }}/app
+      run: flutter pub get --enforce-lockfile

@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    working-directory: app
+
 jobs:
   build:
     name: Offline source build
@@ -21,11 +25,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
-          path: app/build/flatpak/.flatpak-builder
+          path: |
+            app/build/flatpak/.flatpak-builder
+            ~/.local/share/flatpak
           key: flatpak-${{ runner.os }}-${{ runner.arch }}-26.08-${{ hashFiles('packaging/flatpak/**', 'app/linux/**', '**/pubspec.lock', '.github/workflows/flatpak.yml') }}
           restore-keys: flatpak-${{ runner.os }}-${{ runner.arch }}-26.08-
-      - run: sudo apt-get update && sudo apt-get install -y flatpak flatpak-builder python3-venv
-      - run: |
+      - working-directory: .
+        run: sudo apt-get update && sudo apt-get install -y flatpak flatpak-builder python3-venv
+      - working-directory: .
+        run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive flathub org.freedesktop.Platform//26.08 org.freedesktop.Sdk//26.08 org.freedesktop.Sdk.Extension.llvm22//26.08
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -34,15 +42,18 @@ jobs:
           ref: e59a96fcb0fcf48fcd46e8134cae64c26fdc3290
           path: .flatpak-flutter-tool
       - name: Manifest generator
+        working-directory: .
         run: |
           python3 -m venv "$RUNNER_TEMP/flatpak-flutter-venv"
           "$RUNNER_TEMP/flatpak-flutter-venv/bin/pip" install -r .flatpak-flutter-tool/requirements.txt
           echo "$RUNNER_TEMP/flatpak-flutter-venv/bin" >> "$GITHUB_PATH"
       - name: Build bundle
+        working-directory: .
         env:
           FLATPAK_FLUTTER: ${{ github.workspace }}/.flatpak-flutter-tool/flatpak-flutter.py
         run: ./packaging/flatpak/build.sh
       - name: Package
+        working-directory: .
         run: |
           version="${GITHUB_REF_NAME#v}"
           if [ "$GITHUB_REF_TYPE" != tag ]; then version="${GITHUB_SHA:0:7}"; fi

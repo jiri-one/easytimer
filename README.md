@@ -29,10 +29,11 @@ Flutter Linux build dependencies plus GStreamer development headers
 for desktop builds. From `app/`:
 
 ```sh
-flutter pub get
+flutter pub get --enforce-lockfile
 flutter analyze
-flutter test
-flutter test --platform chrome test/web_platform_test.dart test/platform_parity_browser_test.dart
+flutter test --no-pub
+flutter test --no-pub --platform chrome test/web_platform_test.dart
+dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --no-pub test/wakelock_linux_test.dart'
 ./tool/build_web.sh
 ./tool/build_web.sh --wasm
 flutter build linux --release
@@ -53,6 +54,8 @@ proprietary audio SDKs or Play services are used. See
 
 The committed golden tests load the bundled fonts and cover 824×1648 physical
 pixels at DPR 1.5, 1.875 and 2.5, 420×760 and 640×400 desktop windows, and a 1440×900 browser.
+Run the UI, golden and bundled font/licence checks together with
+`flutter test --no-pub test/widget_test.dart test/golden_test.dart test/font_manifest_test.dart`.
 Generated localization bindings are tracked, as in EasyDict. Regenerate them
 with `flutter gen-l10n` after editing the ARB files; CI checks the result.
 After an intentional visual change, regenerate goldens with:
@@ -70,19 +73,24 @@ do not extend a phase or replay expired alarms. Timer text updates on displayed
 second or state changes, with a separate volume subscription.
 
 `workout_controller.dart` connects the engine to preferences and the platform
-backends. Timing, cue policy and playback coordination are Dart. Native playback
-uses `audioplayers`, with media-player completion events to play the finish sound
-three times. Device playback can introduce small gaps between those hits.
-The web backend uses decoded Web Audio buffers and a GainNode, scheduling five
-minutes ahead and topping up on ticks and visibility changes. It rebases future
+backends. Timing, cue policy and playback coordination are Dart. The finish WAV's
+PCM samples are tripled at load time so the three hits play as one continuous
+buffer. Native playback uses one `audioplayers` BytesSource per cue kind; Linux
+reuses stable `audio/alarm.wav` and `audio/end.wav` files in the application's
+cache directory, updating them only when their contents change. The original
+bundled WAV files are unchanged. The web backend decodes the same buffers into
+Web Audio and uses a GainNode, scheduling five minutes ahead and topping up on
+ticks and visibility changes. It rebases future
 audio after context interruption.
 
 The shared cue policy drops expired alarms and delivers the completion sequence
 once. Successful cues gate the next alarm by planned time, so delivery jitter
 cannot drop a three-second rest cue. Pause, Stop and a new plan cancel queued
 sounds and reset that guard. Volume changes apply immediately; gain is the square
-of the slider fraction, matching the original app. Preferences save after a
-250 ms debounce; interval settings save on Start.
+of the slider fraction, matching the original app. Volume saves after a 250 ms
+debounce; interval settings save on each edit and on Start. Only the
+`volumePercent` preference is read; older fractional `volume` values are not
+migrated.
 
 As in the Android original, there is no foreground service or notification in
 this version. A suspended device, terminated process or discarded browser tab

@@ -2,8 +2,6 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-# Older builds left duplicate licences outside the Flutter asset bundle.
-rm -rf build/web/licenses
 # GitHub Pages serves the custom domain at /; bundled resources avoid third-party requests.
 flutter build web --release --no-web-resources-cdn --base-href / "$@"
 wasm=false
