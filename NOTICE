@@ -1,0 +1,40 @@
+EasyTimer third-party notices
+
+Interval Timer
+--------------
+Original application source, translated strings, and audio:
+Copyright (c) 2023 Matthew Nienow
+License: MIT
+Full license: app/assets/licenses/IntervalTimer-MIT.txt
+Source: https://github.com/randombits-dev/interval-timer
+Reference revision: 5abf5fe34d93653a0ef7425fe2e2717ac3d39561
+
+The English, Czech, Catalan, Spanish, and French strings in app/lib/l10n/
+are adapted from app/src/main/res/values*/strings.xml. The application
+title is changed to EasyTimer, and unlimited-set labels are added.
+The following audio files are copied without modification from
+app/src/main/res/raw/ in the original project:
+  app/assets/audio/hit.wav
+  app/assets/audio/threesecbeep.wav
+
+Roboto Mono
+-----------
+Copyright 2015 The Roboto Mono Project Authors
+(https://github.com/googlefonts/robotomono)
+License: SIL Open Font License, Version 1.1
+Full license: app/assets/licenses/RobotoMono-OFL.txt
+Source: https://github.com/googlefonts/RobotoMono
+Reference revision: 895ec691990d041dd727c7b5afa3ce56525d98e6
+
+Unmodified static TrueType fonts, version 3.001, family "Roboto Mono":
+  app/assets/fonts/RobotoMono-Regular.ttf (weight 400)
+  app/assets/fonts/RobotoMono-Bold.ttf (weight 700)
+
+The same bundled font files are registered under Flutter's default "Roboto"
+alias to prevent the web renderer from downloading a fallback font.
+
+Original font files:
+https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/fonts/ttf/RobotoMono-Regular.ttf
+https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/fonts/ttf/RobotoMono-Bold.ttf
+Original license:
+https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/OFL.txt

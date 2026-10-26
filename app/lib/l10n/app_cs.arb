@@ -1,0 +1,23 @@
+{
+  "@@locale": "cs",
+  "appTitle": "EasyTimer",
+  "activeTimeLabel": "Aktivita",
+  "restTimeLabel": "Odpočinek",
+  "prepareTimeLabel": "Připravit",
+  "setsLabel": "Sety",
+  "setLabel": "SET",
+  "start": "Start",
+  "pause": "Pauza",
+  "resume": "Pokračovat",
+  "stop": "Stop",
+  "settings": "Nastavení",
+  "decreaseActiveTime": "Zkrácení času aktivity",
+  "increaseActiveTime": "Prodloužení času aktivity",
+  "decreaseRestTime": "Zkrácení času odpočinku",
+  "increaseRestTime": "Prodloužení času odpočinku",
+  "decreaseSets": "Snížení setů",
+  "increaseSets": "Zvýšení setů",
+  "volume": "Hlasitost",
+  "setCount": "{set}",
+  "unlimited": "Neomezeně"
+}

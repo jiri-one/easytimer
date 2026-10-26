@@ -1,0 +1,23 @@
+{
+  "@@locale": "fr",
+  "appTitle": "EasyTimer",
+  "activeTimeLabel": "Effort",
+  "restTimeLabel": "Repos",
+  "prepareTimeLabel": "Prêt·e?",
+  "setsLabel": "Répétitions",
+  "setLabel": "RÉPÉTITIONS",
+  "start": "Départ",
+  "pause": "Pause",
+  "resume": "Reprendre",
+  "stop": "Arrêt",
+  "settings": "Configuration",
+  "decreaseActiveTime": "Diminuer Temps Effort",
+  "increaseActiveTime": "Augmenter Temps Effort",
+  "decreaseRestTime": "Diminuer Temps Repos",
+  "increaseRestTime": "Augmenter Temps Repos",
+  "decreaseSets": "Diminuer Répétitions",
+  "increaseSets": "Augmenter Répétitions",
+  "volume": "Volume",
+  "setCount": "{set}",
+  "unlimited": "Illimité"
+}

@@ -1,0 +1,30 @@
+{
+  "@@locale": "en",
+  "appTitle": "EasyTimer",
+  "activeTimeLabel": "Active",
+  "restTimeLabel": "Rest",
+  "prepareTimeLabel": "Prepare",
+  "setsLabel": "Sets",
+  "setLabel": "SET",
+  "start": "Start",
+  "pause": "Pause",
+  "resume": "Resume",
+  "stop": "Stop",
+  "settings": "Settings",
+  "decreaseActiveTime": "Decrease Active Time",
+  "increaseActiveTime": "Increase Active Time",
+  "decreaseRestTime": "Decrease Rest Time",
+  "increaseRestTime": "Increase Rest Time",
+  "decreaseSets": "Decrease Sets",
+  "increaseSets": "Increase Sets",
+  "volume": "Volume",
+  "setCount": "{set}",
+  "@setCount": {
+    "placeholders": {
+      "set": {
+        "type": "int"
+      }
+    }
+  },
+  "unlimited": "Unlimited"
+}
