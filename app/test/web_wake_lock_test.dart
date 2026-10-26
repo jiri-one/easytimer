@@ -265,6 +265,9 @@ void main() {
         (Object, StackTrace)? failure;
         await tester.runAsync(() async {
           try {
+            // The test binding resets lifecycle independently of the browser.
+            browser.visible('visible');
+            await _settleWakeLock();
             await body(controller, clock, tester);
           } catch (error, stack) {
             failure = (error, stack);
@@ -287,6 +290,7 @@ void main() {
         expect(tester.takeException(), isNull, reason: description);
         final captured = failure;
         if (captured != null) {
+          debugPrint('Wake-lock failure: ${captured.$1}\n${captured.$2}');
           Error.throwWithStackTrace(captured.$1, captured.$2);
         }
       } finally {
@@ -296,9 +300,14 @@ void main() {
     });
   }
 
-  for (final paused in [false, true]) {
+  for (final (paused, focused) in [
+    (false, true),
+    (true, true),
+    (false, false),
+    (true, false),
+  ]) {
     wakeTest(
-      'real web plugin recovers after visibility release, paused=$paused',
+      'real web plugin recovers after visibility release, paused=$paused, focused=$focused',
       (controller, clock, tester) async {
         var screenChanges = 0;
         controller.showingTimer.addListener(() => screenChanges++);
@@ -315,9 +324,21 @@ void main() {
         expect(browser.requests, hasLength(1));
         clock.nowMs = 6000;
 
-        browser.visible('visible');
+        if (focused) {
+          browser.visible('visible');
+        } else {
+          // The pinned engine maps visibilitychange to resumed; exercise the
+          // visible inactive state without injecting a focus/resume event.
+          browser.visibility = 'visible';
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.inactive,
+          );
+        }
         await _settleWakeLock();
-        expect(tester.binding.lifecycleState, AppLifecycleState.resumed);
+        expect(
+          tester.binding.lifecycleState,
+          focused ? AppLifecycleState.resumed : AppLifecycleState.inactive,
+        );
         expect(browser.requests, hasLength(2));
         expect(await WakelockPlus.enabled, isTrue);
         expect(browser.held, 1);

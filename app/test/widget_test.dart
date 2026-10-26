@@ -544,7 +544,7 @@ void main() {
     await tester.pump();
     expect(find.text('ACTIVE'), findsOneWidget);
     expect(find.text('45'), findsOneWidget);
-    expect(platform.awake, [true, true]);
+    expect(platform.awake, [true, true, true, true]);
     await tester.tap(find.bySemanticsLabel('Pause'));
     await tester.pump();
     expect(controller.display.value.mode, TimerMode.paused);
@@ -554,7 +554,7 @@ void main() {
     await tester.pump();
     expect(controller.display.value.mode, TimerMode.paused);
     expect(find.text('45'), findsOneWidget);
-    expect(platform.awake, [true, true, true]);
+    expect(platform.awake, [true, true, true, true, true, true, true]);
     await tester.tap(find.bySemanticsLabel('Resume'));
     await tester.pump();
     expect(controller.display.value.mode, TimerMode.running);
@@ -577,12 +577,38 @@ void main() {
     await tester.pump();
     expect(controller.display.value.mode, TimerMode.complete);
     expect(controller.showingTimer.value, isFalse);
-    expect(platform.awake, [true, false]);
+    expect(platform.awake, [true, true, false]);
 
     hideApp(tester);
     resumeApp(tester);
     await tester.pump();
-    expect(platform.awake, [true, false]);
+    expect(platform.awake, [true, true, false]);
+  });
+
+  timerTest('a visible unfocused timer refreshes and recovers its wake lock', (
+    tester,
+  ) async {
+    await mount(tester);
+    for (final paused in [false, true]) {
+      clock.nowMs = 0;
+      controller.start(const WorkoutOptions());
+      if (paused) controller.togglePause();
+      await tester.pump();
+      hideApp(tester);
+      final before = platform.awake.length;
+      clock.nowMs = 6000;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      expect(tester.binding.lifecycleState, AppLifecycleState.inactive);
+      expect(platform.awake.length, before + 1);
+      expect(platform.awake.last, isTrue);
+      expect(
+        controller.display.value.phase,
+        paused ? TimerPhase.prepare : TimerPhase.active,
+      );
+      controller.stop();
+      await tester.pump();
+    }
   });
 
   timerTest('settings values and controls scale for distant reading', (

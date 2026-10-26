@@ -33,7 +33,8 @@ class _EasyTimerAppState extends State<EasyTimerApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive) {
       widget.controller.refresh(recoverWakeLock: true);
     }
   }

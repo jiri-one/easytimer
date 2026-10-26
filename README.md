@@ -24,7 +24,8 @@ preserves its remaining time. Resuming from rest skips the rest of that break an
 prepares the next set. The screen stays awake while the timer is shown, including
 while paused, where the platform allows it. On Linux this uses the desktop's
 Inhibit portal through `wakelock_plus`; support depends on the desktop portal
-backend.
+backend. Web wake locks are reconciled whenever the timer becomes visible,
+including when its window stays unfocused.
 
 ## Build and test
 
