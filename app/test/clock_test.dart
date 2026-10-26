@@ -21,9 +21,12 @@ void main() {
     'CLOCK_BOOTTIME is read synchronously without an elapsed-time anchor',
     () {
       var seconds = 123;
+      Pointer<Timespec>? buffer;
       final clock = BootClock(
         read: (id, result) {
           expect(id, 7);
+          buffer ??= result;
+          expect(result, buffer);
           result.ref
             ..seconds = seconds
             ..nanoseconds = 456999999;

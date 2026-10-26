@@ -23,22 +23,19 @@ class BootClock implements MonotonicClock {
           DynamicLibrary.process()
               .lookupFunction<_NativeClockGetTime, ClockGetTime>(
                 'clock_gettime',
+                isLeaf: true,
               );
 
   final ClockGetTime _read;
+  static final _time = calloc<Timespec>();
 
   @override
   int get nowMs {
-    final time = calloc<Timespec>();
-    try {
-      // CLOCK_BOOTTIME includes suspend and matches Android elapsedRealtime.
-      if (_read(7, time) != 0) {
-        throw StateError('CLOCK_BOOTTIME is unavailable');
-      }
-      return time.ref.seconds * 1000 + time.ref.nanoseconds ~/ 1000000;
-    } finally {
-      calloc.free(time);
+    // Synchronous reads share one buffer for the isolate's lifetime.
+    if (_read(7, _time) != 0) {
+      throw StateError('CLOCK_BOOTTIME is unavailable');
     }
+    return _time.ref.seconds * 1000 + _time.ref.nanoseconds ~/ 1000000;
   }
 }
 
