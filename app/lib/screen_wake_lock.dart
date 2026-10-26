@@ -7,7 +7,7 @@ class ScreenWakeLock {
     _change = _change
         .then((_) async {
           if (await WakelockPlus.enabled != enabled) {
-            await WakelockPlus.toggle(enable: enabled);
+            await (enabled ? WakelockPlus.enable() : WakelockPlus.disable());
           }
         })
         .catchError((Object _) {});

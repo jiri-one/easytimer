@@ -71,10 +71,16 @@ Future<void> _until(bool Function() condition) async {
 
 void main() {
   final address = Platform.environment['DBUS_SESSION_BUS_ADDRESS'];
+  final home = Platform.environment['HOME'];
+  final privateSocket =
+      address != null &&
+      (address.startsWith('unix:path=/tmp/') ||
+          (home != null &&
+              address.startsWith('unix:path=$home/.cache/easytimer-qa/tmp/')));
   final isolated =
       Platform.isLinux &&
       address != null &&
-      address.startsWith('unix:path=/tmp/') &&
+      privateSocket &&
       Platform.environment['EASYTIMER_PRIVATE_DBUS'] == address;
 
   test(
@@ -139,6 +145,6 @@ void main() {
         await service.close();
       }
     },
-    skip: isolated ? false : 'Requires dbus-run-session with EASYTIMER_PRIVATE_DBUS equal to its /tmp bus address.',
+    skip: isolated ? false : 'Requires EASYTIMER_PRIVATE_DBUS equal to the private bus address in /tmp or ~/.cache/easytimer-qa/tmp.',
   );
 }

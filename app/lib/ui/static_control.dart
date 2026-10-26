@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'native_style.dart';
 
-class StaticFocusBorder extends StatelessWidget {
+class StaticFocusBorder extends StatefulWidget {
   const StaticFocusBorder({
     super.key,
     required this.focused,
@@ -16,16 +16,40 @@ class StaticFocusBorder extends StatelessWidget {
   final BoxShape shape;
 
   @override
+  State<StaticFocusBorder> createState() => _StaticFocusBorderState();
+}
+
+class _StaticFocusBorderState extends State<StaticFocusBorder> {
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addHighlightModeListener(_highlightChanged);
+  }
+
+  void _highlightChanged(FocusHighlightMode mode) => setState(() {});
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeHighlightModeListener(_highlightChanged);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => DecoratedBox(
     position: DecorationPosition.foreground,
     decoration: BoxDecoration(
-      shape: shape,
+      shape: widget.shape,
       border: Border.all(
-        color: focused ? nativeTextColor(context) : Colors.transparent,
+        color:
+            widget.focused &&
+                FocusManager.instance.highlightMode ==
+                    FocusHighlightMode.traditional
+            ? nativeTextColor(context)
+            : Colors.transparent,
         width: 2,
       ),
     ),
-    child: child,
+    child: widget.child,
   );
 }
 

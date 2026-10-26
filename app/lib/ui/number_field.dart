@@ -83,33 +83,64 @@ class _NumberFieldState extends State<NumberField> {
                             ),
                           ),
                         ),
-                      EditableText(
-                        controller: widget.controller,
-                        focusNode: _focus,
-                        scrollController: _scroll,
-                        style: style,
-                        cursorColor: foreground,
-                        backgroundCursorColor: foreground,
-                        cursorOpacityAnimates: false,
-                        showCursor: false,
-                        selectionColor: dark
-                            ? const Color(0xff666666)
-                            : const Color(0xffcccccc),
-                        // Selection handles and Material menus fade; keyboard and
-                        // accessibility editing remain available without them.
-                        contextMenuBuilder: null,
-                        showSelectionHandles: false,
-                        keyboardType: TextInputType.number,
-                        textInputAction: TextInputAction.done,
-                        textAlign: TextAlign.center,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(4),
-                        ],
-                        onChanged: (_) => widget.onChanged(),
-                        onSubmitted: (_) => widget.onSubmitted(),
+                      // Centered single-line text hits Flutter's vertical-caret assertion.
+                      Shortcuts(
+                        shortcuts: const {
+                          SingleActivator(
+                            LogicalKeyboardKey.arrowUp,
+                          ): ExtendSelectionToDocumentBoundaryIntent(
+                            forward: false,
+                            collapseSelection: true,
+                          ),
+                          SingleActivator(
+                            LogicalKeyboardKey.arrowDown,
+                          ): ExtendSelectionToDocumentBoundaryIntent(
+                            forward: true,
+                            collapseSelection: true,
+                          ),
+                          SingleActivator(
+                            LogicalKeyboardKey.arrowUp,
+                            shift: true,
+                          ): ExtendSelectionToDocumentBoundaryIntent(
+                            forward: false,
+                            collapseSelection: false,
+                          ),
+                          SingleActivator(
+                            LogicalKeyboardKey.arrowDown,
+                            shift: true,
+                          ): ExtendSelectionToDocumentBoundaryIntent(
+                            forward: true,
+                            collapseSelection: false,
+                          ),
+                        },
+                        child: EditableText(
+                          controller: widget.controller,
+                          focusNode: _focus,
+                          scrollController: _scroll,
+                          style: style,
+                          cursorColor: foreground,
+                          backgroundCursorColor: foreground,
+                          cursorOpacityAnimates: false,
+                          showCursor: false,
+                          selectionColor: dark
+                              ? const Color(0xff666666)
+                              : const Color(0xffcccccc),
+                          // Selection handles and Material menus fade; keyboard and
+                          // accessibility editing remain available without them.
+                          contextMenuBuilder: null,
+                          showSelectionHandles: false,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          textAlign: TextAlign.center,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(4),
+                          ],
+                          onChanged: (_) => widget.onChanged(),
+                          onSubmitted: (_) => widget.onSubmitted(),
+                        ),
                       ),
                     ],
                   ),

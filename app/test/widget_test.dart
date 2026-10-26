@@ -49,6 +49,22 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  void hideApp(WidgetTester tester, {bool paused = false}) {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    if (paused) {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    }
+  }
+
+  void resumeApp(WidgetTester tester) {
+    if (tester.binding.lifecycleState == AppLifecycleState.paused) {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    }
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  }
+
   Future<void> staticFrame(WidgetTester tester) async {
     // Flush focus before counting callbacks so pending layout is not an animation.
     FocusManager.instance.applyFocusChangesIfNeeded();
@@ -71,6 +87,7 @@ void main() {
       .focusNode!;
 
   Future<void> focusControl(WidgetTester tester, Finder target) async {
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     final focus = focusOf(tester, target)..requestFocus();
     await staticFrame(tester);
     expect(focus.hasPrimaryFocus, isTrue);
@@ -311,6 +328,71 @@ void main() {
     },
   );
 
+  timerTest('volume arrows apply only while the timer is shown', (
+    tester,
+  ) async {
+    controller.changeVolume(50);
+    await mount(tester);
+    for (final field in tester.widgetList<EditableText>(
+      find.byType(EditableText),
+    )) {
+      field.controller.selection = TextSelection.collapsed(
+        offset: field.controller.text.length,
+      );
+      field.focusNode.requestFocus();
+      await staticFrame(tester);
+      expect(field.focusNode.hasPrimaryFocus, isTrue);
+      final text = field.controller.text;
+      for (final key in [
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.arrowUp,
+      ]) {
+        await tester.sendKeyDownEvent(key);
+        await tester.pump();
+        await tester.sendKeyRepeatEvent(key);
+        await tester.sendKeyUpEvent(key);
+        await staticFrame(tester);
+        expect(controller.volume.value, 50);
+        expect(
+          field.controller.selection.extentOffset,
+          key == LogicalKeyboardKey.arrowDown ? text.length : 0,
+        );
+        expect(field.controller.text, text);
+      }
+    }
+    await focusControl(tester, find.byType(CircleControl));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await staticFrame(tester);
+    expect(controller.volume.value, 50);
+    expect(platform.volumes, [100, 50]);
+    expect(controller.settings.preferences!.getInt('volumePercent'), 50);
+
+    controller.start(const WorkoutOptions());
+    controller.togglePause();
+    await tester.pump();
+    await focusControl(tester, find.byType(CircleControl).first);
+    for (final (key, expected) in [
+      (LogicalKeyboardKey.arrowDown, 45),
+      (LogicalKeyboardKey.arrowUp, 50),
+    ]) {
+      await tester.sendKeyEvent(key);
+      await staticFrame(tester);
+      expect(controller.volume.value, expected);
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    final field = tester.widget<EditableText>(find.byType(EditableText).first);
+    field.controller.selection = TextSelection.collapsed(
+      offset: field.controller.text.length,
+    );
+    field.focusNode.requestFocus();
+    await staticFrame(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await staticFrame(tester);
+    expect(controller.showingTimer.value, isFalse);
+    expect(controller.volume.value, 50);
+  });
+
   timerTest(
     'focused slider keys, repeats, semantics and pointer endpoints stay static',
     (tester) async {
@@ -453,19 +535,51 @@ void main() {
     await tester.pump();
     expect(find.text('PREPARE'), findsOneWidget);
     expect(platform.awake.last, isTrue);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    hideApp(tester, paused: true);
     clock.nowMs = 5000;
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pump();
     expect(find.text('ACTIVE'), findsOneWidget);
     expect(find.text('45'), findsOneWidget);
+    expect(platform.awake, [true, true]);
     await tester.tap(find.bySemanticsLabel('Pause'));
     await tester.pump();
     expect(controller.display.value.mode, TimerMode.paused);
-    expect(platform.awake.last, isTrue);
+    hideApp(tester);
+    clock.nowMs = 60000;
+    resumeApp(tester);
+    await tester.pump();
+    expect(controller.display.value.mode, TimerMode.paused);
+    expect(find.text('45'), findsOneWidget);
+    expect(platform.awake, [true, true, true]);
     await tester.tap(find.bySemanticsLabel('Resume'));
     await tester.pump();
     expect(controller.display.value.mode, TimerMode.running);
+  });
+
+  timerTest('lifecycle resume keeps stopped and completed workouts wake-off', (
+    tester,
+  ) async {
+    await mount(tester);
+    hideApp(tester);
+    resumeApp(tester);
+    await tester.pump();
+    expect(platform.awake, isEmpty);
+
+    controller.start(const WorkoutOptions(active: 5, rest: 0, sets: 1));
+    await tester.pump();
+    hideApp(tester);
+    clock.nowMs = 60000;
+    resumeApp(tester);
+    await tester.pump();
+    expect(controller.display.value.mode, TimerMode.complete);
+    expect(controller.showingTimer.value, isFalse);
+    expect(platform.awake, [true, false]);
+
+    hideApp(tester);
+    resumeApp(tester);
+    await tester.pump();
+    expect(platform.awake, [true, false]);
   });
 
   timerTest('native sizing keeps text, proportions and reachable controls', (

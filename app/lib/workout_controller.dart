@@ -14,10 +14,10 @@ class WorkoutController {
     MonotonicClock? clock,
     void Function(bool)? keepAwake,
   }) : engine = TimerEngine(clock ?? createWorkoutClock()),
-       volume = ValueNotifier(settings.volumePercent) {
+       volume = ValueNotifier(settings.volumePercent),
+       _keepAwake = keepAwake ?? ScreenWakeLock().setEnabled {
     platform.setVolume(volume.value);
-    final wake = keepAwake ?? ScreenWakeLock().setEnabled;
-    showingTimer.addListener(() => wake(showingTimer.value));
+    showingTimer.addListener(() => _keepAwake(showingTimer.value));
   }
 
   final TimerSettings settings;
@@ -26,6 +26,7 @@ class WorkoutController {
   final showingTimer = ValueNotifier(false);
   final display = ValueNotifier(stoppedSnapshot);
   final ValueNotifier<int> volume;
+  final void Function(bool) _keepAwake;
   Timer? _update;
   Timer? _volumeSave;
 
@@ -69,7 +70,7 @@ class WorkoutController {
     });
   }
 
-  void refresh() {
+  void refresh({bool recoverWakeLock = false}) {
     _update?.cancel();
     if (!showingTimer.value) return;
     final now = engine.clock.nowMs;
@@ -84,6 +85,8 @@ class WorkoutController {
       final delay = next.remainingMs - (next.seconds - 1) * 1000;
       _update = Timer(Duration(milliseconds: delay.clamp(1, 1000)), refresh);
     }
+    // Browsers release the lock while hidden without changing our desired state.
+    if (recoverWakeLock && showingTimer.value) _keepAwake(true);
   }
 
   void dispose() {

@@ -32,7 +32,9 @@ class _EasyTimerAppState extends State<EasyTimerApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) widget.controller.refresh();
+    if (state == AppLifecycleState.resumed) {
+      widget.controller.refresh(recoverWakeLock: true);
+    }
   }
 
   @override
@@ -84,10 +86,12 @@ class _EasyTimerAppState extends State<EasyTimerApp>
           const SingleActivator(LogicalKeyboardKey.escape): () {
             if (widget.controller.showingTimer.value) widget.controller.stop();
           },
-          const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-              widget.controller.stepVolume(5),
-          const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-              widget.controller.stepVolume(-5),
+          if (showingTimer) ...{
+            const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+                widget.controller.stepVolume(5),
+            const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+                widget.controller.stepVolume(-5),
+          },
         },
         child: Focus(
           autofocus: true,
