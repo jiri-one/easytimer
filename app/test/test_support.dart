@@ -123,12 +123,15 @@ class RecordingTimerPlatform extends TimerPlatform {
 }
 
 class FakeAudioPlayer implements AudioPlayer {
-  FakeAudioPlayer(this.clock);
+  FakeAudioPlayer(this.clock, {List<(SoundKind, int)>? starts, this.onStart})
+    : starts = starts ?? [];
 
   final FakeClock clock;
   final calls = <(String, Object?)>[];
-  final starts = <(SoundKind, int)>[];
+  final List<(SoundKind, int)> starts;
   final attempts = <int>[];
+  final void Function()? onStart;
+  Duration position = Duration.zero;
   FutureOr<void> Function(String) respond = (_) {};
   @override
   Source? source;
@@ -180,11 +183,18 @@ class FakeAudioPlayer implements AudioPlayer {
   }
 
   @override
+  Future<void> seek(Duration position) async {
+    await _call('seek', position);
+    this.position = position;
+  }
+
+  @override
   Future<void> resume() async {
     attempts.add(clock.nowMs);
     await _call('resume');
     starts.add((currentKind, clock.nowMs));
     state = PlayerState.playing;
+    onStart?.call();
   }
 
   @override

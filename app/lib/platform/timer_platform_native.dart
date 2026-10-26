@@ -18,86 +18,104 @@ class _CachedBytesSource extends BytesSource {
   Future<void>? _preparation;
   String? _path;
 
-  Future<void> _prepare() async {
+  Future<void> _prepare() =>
+      _preparation ??= _publish().whenComplete(() => _preparation = null);
+
+  Future<void> _publish() async {
     final cache = await getApplicationCacheDirectory();
     final directory = await Directory('${cache.path}/audio')
         .create(recursive: true);
     final file = File('${directory.path}/${kind.name}.wav');
     if (!await file.exists() || !listEquals(await file.readAsBytes(), bytes)) {
-      await file.writeAsBytes(bytes, flush: true);
+      final temporary = File(
+        '${file.path}.$pid.${DateTime.now().microsecondsSinceEpoch}.'
+        '${math.Random.secure().nextInt(1 << 32)}.tmp',
+      );
+      await temporary.create(exclusive: true);
+      try {
+        // Decoders in another process must only see a complete, closed WAV.
+        await temporary.writeAsBytes(bytes, flush: true);
+        await temporary.rename(file.path);
+      } finally {
+        if (await temporary.exists()) await temporary.delete();
+      }
     }
     _path = file.path;
+  }
+
+  Future<void> ensureAvailable() async {
+    if (_path != null && !await File(_path!).exists()) await _prepare();
   }
 
   @override
   Future<void> setOnPlayer(AudioPlayer player) async {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
       // The plugin's process-randomized byte hash leaves a new file each launch.
-      try {
-        await (_preparation ??= _prepare());
-      } catch (_) {
-        _preparation = null;
-        rethrow;
-      }
+      await _prepare();
       await player.setSourceDeviceFile(_path!, mimeType: mimeType);
     } else {
       await super.setOnPlayer(player);
     }
   }
-
-  bool matches(Source? source) =>
-      source is BytesSource && identical(source.bytes, bytes) ||
-      source is DeviceFileSource && source.path == _path;
 }
 
 class PlatformBackend extends TimerPlatform {
-  PlatformBackend(this._clock, {AudioPlayer? player})
-    : _player = player ?? (AudioPlayer()..positionUpdater = null);
+  PlatformBackend(
+    this._clock, {
+    AudioPlayer? alarmPlayer,
+    AudioPlayer? endPlayer,
+  }) : _players = {
+         SoundKind.alarm:
+             alarmPlayer ?? (AudioPlayer()..positionUpdater = null),
+         SoundKind.end: endPlayer ?? (AudioPlayer()..positionUpdater = null),
+       };
 
   final MonotonicClock _clock;
-  final AudioPlayer _player;
+  final Map<SoundKind, AudioPlayer> _players;
   final _policy = CuePolicy();
   final _sources = <SoundKind, _CachedBytesSource>{};
-  Future<void> _operations = Future.value();
+  final _prepared = <SoundKind>{};
+  final _stops = <Future<void>>{};
   Future<void>? _initialization;
   Future<void>? _volumeUpdate;
   Timer? _timer;
   SoundEvent? _inFlight;
+  SoundKind? _resuming;
+  SoundKind? _playing;
   int _revision = 0;
   double _gain = 1;
   bool _initialized = false;
 
-  Future<void> _serial(Future<void> Function() operation) {
-    final result = _operations.then((_) => operation());
-    _operations = result.catchError((Object _) {});
-    return result;
-  }
-
   @override
   Future<void> initialize() => _initialization ??=
-      _serial(() async {
+      () async {
         if (_sources.isEmpty) {
           final bytes = await Future.wait(SoundKind.values.map(loadSound));
           for (final kind in SoundKind.values) {
             _sources[kind] = _CachedBytesSource(kind, bytes[kind.index]);
           }
         }
-        // SoundPool does not report reliable completion, so player state goes stale.
-        await _player.setPlayerMode(PlayerMode.mediaPlayer);
-        await _player.setReleaseMode(ReleaseMode.stop);
-        await _player.setAudioContext(
-          AudioContext(
-            android: const AudioContextAndroid(
-              usageType: AndroidUsageType.media,
-              contentType: AndroidContentType.sonification,
-              audioFocus: AndroidAudioFocus.none,
+        for (final entry in _players.entries) {
+          if (_prepared.contains(entry.key)) continue;
+          final player = entry.value;
+          // SoundPool does not report reliable completion, so state goes stale.
+          await player.setPlayerMode(PlayerMode.mediaPlayer);
+          await player.setReleaseMode(ReleaseMode.stop);
+          await player.setAudioContext(
+            AudioContext(
+              android: const AudioContextAndroid(
+                usageType: AndroidUsageType.media,
+                contentType: AndroidContentType.sonification,
+                audioFocus: AndroidAudioFocus.none,
+              ),
             ),
-          ),
-        );
-        await _player.setSource(_sources[SoundKind.alarm]!);
+          );
+          await player.setSource(_sources[entry.key]!);
+          _prepared.add(entry.key);
+        }
         await _applyVolume();
         _initialized = true;
-      }).catchError((Object _) {
+      }().catchError((Object _) {
         _initialization = null;
       });
 
@@ -119,7 +137,7 @@ class PlatformBackend extends TimerPlatform {
     _timer?.cancel();
     _timer = null;
     if (plan.isEmpty) return;
-    final firstAt = plan.map((event) => event.atMs).reduce(math.min);
+    final firstAt = plan.first.atMs;
     // Re-read BOOTTIME after suspend instead of trusting a long Dart timer.
     final delay = _inFlight == null
         ? (firstAt - now).clamp(minimumDelay, 1000)
@@ -130,24 +148,44 @@ class PlatformBackend extends TimerPlatform {
   Future<void> _start(SoundEvent event, int revision) async {
     _inFlight = event;
     bool current() => revision == _revision;
-    bool valid() => current() && !_policy.expired(event, _clock.nowMs);
+    final player = _players[event.kind]!;
     try {
       await initialize();
-      if (!_initialized || !current()) return;
-      await _serial(() async {
-        if (!valid()) return;
-        if (_player.state == PlayerState.playing) await _player.stop();
+      if (!current()) return;
+      if (!_initialized) {
+        _policy.failed(event);
+        return;
+      }
+      // A delayed stop reply must settle before the same player is reused.
+      while (_stops.isNotEmpty) {
+        await Future.wait(_stops.toList());
+      }
+      if (!current()) return;
+      await _sources[event.kind]!.ensureAvailable();
+      if (!current()) return;
+      for (final other in _players.values) {
+        if (other.state == PlayerState.playing) await _stop(other);
         if (!current()) return;
-        await _player.setSource(_sources[event.kind]!);
-        // Loading can outlive an alarm's window or a cancelled plan.
-        if (!valid()) return;
-        await _player.resume();
-        if (current()) _policy.started(event);
-      });
+      }
+      _playing = null;
+      await player.seek(Duration.zero);
+      if (!current()) return;
+      _resuming = event.kind;
+      await player.resume();
+      if (!current()) {
+        // The plugin cannot retract a submitted resume or bound its latency.
+        await _stop(player);
+        return;
+      }
+      _playing = event.kind;
+      _policy.started(event);
     } catch (_) {
-      // A failed alarm remains eligible until its original deadline.
-    } finally {
+      if (_resuming != null) {
+        await _stop(player).catchError((Object _) {});
+      }
       if (current()) _policy.failed(event);
+    } finally {
+      _resuming = null;
       _inFlight = null;
       final now = _clock.nowMs;
       final delay = current() && event.kind.retries && !_policy.handled(event)
@@ -157,29 +195,39 @@ class PlatformBackend extends TimerPlatform {
     }
   }
 
+  Future<void> _stop(AudioPlayer player) {
+    final stop = player.stop();
+    _stops.add(stop);
+    return stop.whenComplete(() => _stops.remove(stop));
+  }
+
   @override
   void cancel() {
     _revision++;
     _timer?.cancel();
     _timer = null;
     _policy.reset();
-    unawaited(
-      _serial(() async {
-        if (_player.state != PlayerState.playing) return;
-        final keep = _sources.entries.any(
-          (entry) =>
-              entry.key.keepsOnCancel && entry.value.matches(_player.source),
-        );
-        if (!keep) await _player.stop();
-      }).catchError((Object _) {}),
-    );
+    for (final entry in _players.entries) {
+      final playing = entry.value.state == PlayerState.playing;
+      final keep =
+          entry.key.keepsOnCancel &&
+          _playing == entry.key &&
+          playing &&
+          _resuming != entry.key;
+      if (!keep && (playing || _resuming == entry.key)) {
+        // Cancellation must bypass an unfinished resume, even for an end cue.
+        unawaited(_stop(entry.value).catchError((Object _) {}));
+      }
+    }
   }
 
   Future<void> _applyVolume() => _volumeUpdate ??= () async {
     double sent;
     do {
       sent = _gain;
-      await _player.setVolume(sent);
+      await Future.wait(
+        _players.values.map((player) => player.setVolume(sent)),
+      );
     } while (sent != _gain);
   }().whenComplete(() => _volumeUpdate = null);
 
