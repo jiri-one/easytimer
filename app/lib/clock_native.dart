@@ -1,9 +1,8 @@
 import 'dart:ffi';
-import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
-import 'clock_base.dart';
+import 'clock.dart';
 
 final class Timespec extends Struct {
   @Long()
@@ -39,5 +38,4 @@ class BootClock implements MonotonicClock {
   }
 }
 
-MonotonicClock createClock() =>
-    Platform.isAndroid || Platform.isLinux ? BootClock() : StopwatchClock();
+MonotonicClock createClock() => BootClock();

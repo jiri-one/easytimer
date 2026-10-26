@@ -1,10 +1,9 @@
-import 'package:web/web.dart' as web;
+import 'clock.dart';
 
-import 'clock_base.dart';
-
-class BrowserClock implements MonotonicClock {
+class StopwatchClock implements MonotonicClock {
+  final _watch = Stopwatch()..start();
   @override
-  int get nowMs => web.window.performance.now().floor();
+  int get nowMs => _watch.elapsedMilliseconds;
 }
 
-MonotonicClock createClock() => BrowserClock();
+MonotonicClock createClock() => StopwatchClock();
