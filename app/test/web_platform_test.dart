@@ -1,9 +1,16 @@
 @TestOn('browser')
 library;
 
+import 'dart:async';
+import 'dart:js_interop';
+import 'dart:typed_data';
+
+import 'package:easytimer/audio.dart';
 import 'package:easytimer/platform/timer_platform_web.dart';
 import 'package:easytimer/timer_engine.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:web/web.dart' as web;
 
 import 'test_support.dart';
 import 'web/browser_fixture.dart';
@@ -19,30 +26,52 @@ void main() {
   setUp(() async {
     audio = BrowserFixture()..install();
     clock = FakeClock();
-    backend = PlatformBackend();
+    backend = PlatformBackend(clock);
     await backend.initialize();
   });
 
   tearDown(() async {
     backend.dispose();
-    await flushBrowserPromises();
+    await pumpEventQueue(times: 2);
     audio.restore();
   });
 
-  void schedule(List<SoundEvent> events) => backend.schedule(events, clock);
+  void schedule(List<SoundEvent> events) => backend.schedule(events);
+
+  test(
+    'keyboard resumes before Flutter stops propagation to the document',
+    () async {
+      final stop = ((web.Event event) => event.stopPropagation()).toJS;
+      web.window.addEventListener('keydown', stop, true.toJS);
+      try {
+        audio.state('suspended');
+        schedule([alarm]);
+        audio.activate('keydown');
+        await pumpEventQueue(times: 2);
+        expect(audio.resumeCalls, 1);
+        expect(audio.context.state, 'running');
+        expect(audio.liveStarts, [12]);
+      } finally {
+        web.window.removeEventListener('keydown', stop, true.toJS);
+      }
+    },
+  );
 
   for (final action in ['continue', 'cancel', 'dispose']) {
     test('asynchronous loading respects the current plan: $action', () async {
       backend.dispose();
       audio.restore();
       audio = BrowserFixture()..install();
-      backend = PlatformBackend();
+      audio.decodeGate = Completer<void>();
+      backend = PlatformBackend(clock);
       final initialized = backend.initialize();
       schedule([alarm]);
-      backend.unlock();
+      audio.activate('pointerup');
+      await audio.decoding.future;
       expect(audio.startTimes, isEmpty);
       if (action == 'cancel') backend.cancel();
       if (action == 'dispose') backend.dispose();
+      audio.decodeGate!.complete();
       await initialized;
       expect(audio.liveStarts, action == 'continue' ? [12] : isEmpty);
       if (action == 'dispose') {
@@ -52,25 +81,36 @@ void main() {
     });
   }
 
+  for (final type in ['pointerdown', 'pointerup', 'touchend', 'keydown']) {
+    test('$type resumes synchronously through document capture', () async {
+      audio.state('suspended');
+      schedule([alarm]);
+      audio.activate(type);
+      expect(audio.resumeCalls, 1);
+      await pumpEventQueue(times: 2);
+      expect(audio.liveStarts, [12]);
+    });
+  }
+
   test(
-    'unlock resumes synchronously without rebuilding a running plan',
+    'healthy activation resumes without rebuilding the running plan',
     () async {
       schedule([alarm]);
       clock.nowMs = 1000;
       audio.advance(0.997);
-      backend.unlock();
+      audio.activate('pointerup');
       expect(audio.resumeCalls, 1);
-      await flushBrowserPromises();
+      await pumpEventQueue(times: 2);
       expect(audio.startTimes, [12]);
       expect(audio.liveStarts, [12]);
 
       audio.state('suspended');
       audio.holdResume = true;
-      backend.unlock();
+      audio.activate('pointerup');
       expect(audio.resumeCalls, 2);
       expect(audio.liveStarts, isEmpty);
       audio.resolveResume();
-      await flushBrowserPromises();
+      await pumpEventQueue(times: 2);
       expect(audio.liveStarts.single, closeTo(11.997, 0.000001));
     },
   );
@@ -84,7 +124,7 @@ void main() {
         clock.nowMs = 10000;
         switch (resume) {
           case 'gesture':
-            backend.unlock();
+            audio.activate('pointerup');
           case 'visibility':
             audio.visible('hidden');
             expect(audio.resumeCalls, 0);
@@ -92,7 +132,7 @@ void main() {
           case 'statechange':
             audio.state('running');
         }
-        await flushBrowserPromises();
+        await pumpEventQueue(times: 2);
         expect(audio.liveStarts, [2]);
         audio.advance(2.01);
         expect(audio.played, hasLength(1));
@@ -111,7 +151,7 @@ void main() {
         schedule([alarm]);
       } else {
         audio.visible('visible');
-        await flushBrowserPromises();
+        await pumpEventQueue(times: 2);
       }
       expect(audio.liveStarts, [43]);
     });
@@ -136,20 +176,54 @@ void main() {
     expect(audio.played, hasLength(1));
   });
 
+  test('future sources dropped by a newly merged cue are stopped', () {
+    const later = SoundEvent(SoundKind.alarm, 5000, 5049);
+    schedule([later]);
+    final dropped = audio.starts.single;
+    schedule([const SoundEvent(SoundKind.alarm, 3000, 3049)]);
+    expect(dropped.disconnected, isTrue);
+    expect(dropped.stopAt, 0);
+    expect(audio.liveStarts, [3]);
+    clock.nowMs = 3001;
+    audio.advance(3.001);
+    schedule([later]);
+    expect(audio.startTimes, [5, 3]);
+  });
+
+  test('end decodes tripled PCM into one continuous source', () async {
+    final original = await rootBundle.load(SoundKind.end.asset);
+    final hitSeconds =
+        original.getUint32(40, Endian.little) /
+        original.getUint32(28, Endian.little);
+    schedule([end]);
+    expect(audio.buffers, hasLength(2));
+    final source = audio.starts.single;
+    expect(source.buffer.duration, closeTo(hitSeconds * 3, 0.000001));
+    expect(
+      source.buffer.bytes.lengthInBytes,
+      44 + (original.lengthInBytes - 44) * 3,
+    );
+    audio.advance(10 + hitSeconds * 2);
+    expect(source.disconnected, isFalse);
+    audio.advance(10 + hitSeconds * 3);
+    expect(audio.played, [source]);
+    expect(source.disconnected, isTrue);
+  });
+
   for (final historical in [false, true]) {
     for (final deliverEnded in [false, true]) {
       test('end once: historical=$historical, ended=$deliverEnded', () {
         clock.nowMs = historical ? 60000 : 0;
         schedule([end]);
         schedule([end]);
-        expect(audio.startTimes, hasLength(3));
+        expect(audio.startTimes, hasLength(1));
         audio.advance(60, deliverEnded: deliverEnded);
         clock.nowMs = 600000;
         schedule([]);
         schedule([end, const SoundEvent(SoundKind.end, 590000, null)]);
         audio.visible('visible');
-        expect(audio.played, hasLength(3));
-        expect(audio.startTimes, hasLength(3));
+        expect(audio.played, hasLength(1));
+        expect(audio.startTimes, hasLength(1));
         expect(audio.liveStarts, isEmpty);
       });
     }
@@ -165,31 +239,35 @@ void main() {
         clock.nowMs = 60000;
         schedule([end]);
         audio.state('running');
-        audio.advance(11, deliverEnded: deliverEnded);
+        audio.advance(14, deliverEnded: deliverEnded);
         schedule([end]);
-        expect(audio.played, hasLength(3));
-        expect(audio.startTimes, hasLength(begun ? 3 : 6));
+        expect(audio.played, hasLength(1));
+        expect(audio.startTimes, hasLength(begun ? 1 : 2));
         expect(audio.liveStarts, isEmpty);
       });
     }
   }
 
-  test('browser resume denial leaves historical end available', () async {
-    audio.state('interrupted');
-    audio.failResume = true;
-    clock.nowMs = 60000;
-    schedule([end]);
-    audio.visible('visible');
-    await flushBrowserPromises();
-    expect(audio.startTimes, isEmpty);
-    audio.failResume = false;
-    backend.unlock();
-    await flushBrowserPromises();
-    expect(audio.liveStarts, [0, 0.25, 0.5]);
-    audio.advance(1);
-    schedule([end]);
-    expect(audio.played, hasLength(3));
-  });
+  test(
+    'touch release retries a denied activation and historical end',
+    () async {
+      audio.state('interrupted');
+      audio.failResume = true;
+      clock.nowMs = 60000;
+      schedule([end]);
+      audio.activate('pointerdown', pointerType: 'touch');
+      await pumpEventQueue(times: 2);
+      expect(audio.startTimes, isEmpty);
+      audio.failResume = false;
+      audio.activate('pointerup', pointerType: 'touch');
+      await pumpEventQueue(times: 2);
+      expect(audio.liveStarts, [0]);
+      audio.advance(4);
+      schedule([end]);
+      expect(audio.played, hasLength(1));
+      expect(audio.resumeCalls, 2);
+    },
+  );
 
   test('played alarm ledger survives source cleanup and long idle time', () {
     schedule([alarm]);
@@ -206,8 +284,8 @@ void main() {
     backend.cancel();
     expect(audio.liveStarts, isEmpty);
     schedule([alarm, end]);
-    expect(audio.startTimes, hasLength(8));
-    expect(audio.liveStarts, [10, 10.25, 10.5, 12]);
+    expect(audio.startTimes, hasLength(4));
+    expect(audio.liveStarts, [10, 12]);
   });
 
   test('cancel stops a playing alarm and resets the planned-time guard', () {
@@ -222,24 +300,21 @@ void main() {
     expect(audio.played, hasLength(3));
   });
 
-  test(
-    'cancel preserves all remaining end hits through repeated cancellation',
-    () {
-      schedule([end]);
-      clock.nowMs = 10100;
-      audio.advance(10.1);
-      backend.cancel();
-      backend.cancel();
-      expect(audio.liveStarts, [10, 10.25, 10.5]);
-      expect(
-        audio.starts.map((node) => node.stopAt),
-        everyElement(double.infinity),
-      );
-      audio.advance(11);
-      expect(audio.played, hasLength(3));
-      expect(audio.liveStarts, isEmpty);
-    },
-  );
+  test('cancel preserves the end source through repeated cancellation', () {
+    schedule([end]);
+    clock.nowMs = 10100;
+    audio.advance(10.1);
+    backend.cancel();
+    backend.cancel();
+    expect(audio.liveStarts, [10]);
+    expect(
+      audio.starts.map((node) => node.stopAt),
+      everyElement(double.infinity),
+    );
+    audio.advance(14);
+    expect(audio.played, hasLength(1));
+    expect(audio.liveStarts, isEmpty);
+  });
 
   test('old end tail completion cannot consume the new plan end', () {
     schedule([end]);
@@ -248,71 +323,56 @@ void main() {
     backend.cancel();
     const nextEnd = SoundEvent(SoundKind.end, 20000, null);
     schedule([nextEnd]);
-    audio.advance(11);
-    clock.nowMs = 11000;
+    audio.advance(14);
+    clock.nowMs = 14000;
     schedule([nextEnd]);
-    expect(audio.liveStarts, [20, 20.25, 20.5]);
-    audio.advance(21);
-    clock.nowMs = 21000;
+    expect(audio.liveStarts, [20]);
+    audio.advance(24);
+    clock.nowMs = 24000;
     schedule([nextEnd]);
-    expect(audio.played, hasLength(6));
-    expect(audio.startTimes, hasLength(6));
+    expect(audio.played, hasLength(2));
+    expect(audio.startTimes, hasLength(2));
   });
 
   test('new prepare cue replaces an overlapping finish as one stream', () {
-    audio.buffers[1].duration = 1.17553;
     schedule([end]);
+    final tail = audio.starts.single;
     clock.nowMs = 10100;
     audio.advance(10.1);
     backend.cancel();
     final engine = TimerEngine(clock)
       ..start(const WorkoutOptions(active: 5, sets: 1));
     schedule(engine.soundsBetween(clock.nowMs, clock.nowMs + 300000));
-    expect(
-      audio.starts.take(3).map((node) => node.stopAt),
-      everyElement(closeTo(12.1, 0.000001)),
-    );
+    expect(tail.stopAt, closeTo(12.1, 0.000001));
     audio.advance(13);
-    expect(
-      audio.played.where((node) => node.buffer.kind == SoundKind.end),
-      hasLength(2),
-    );
-    expect(
-      audio.played.where((node) => node.buffer.kind == SoundKind.alarm),
-      hasLength(1),
-    );
+    expect(tail.disconnected, isTrue);
+    expect(audio.played, [tail, audio.starts[1]]);
   });
 
   test('a stale resume cannot restore canceled deferred sounds', () async {
     audio.state('interrupted');
     audio.holdResume = true;
     schedule([alarm, end]);
-    backend.unlock();
+    audio.activate('pointerup');
     backend.cancel();
     schedule([const SoundEvent(SoundKind.alarm, 20000, 20049)]);
     audio.resolveResume();
-    await flushBrowserPromises();
+    await pumpEventQueue(times: 2);
     expect(audio.liveStarts, [20]);
   });
 
-  test('queued but unstarted cue never stamps the successful alarm guard', () {
-    schedule([const SoundEvent(SoundKind.alarm, 1000, 1049)]);
+  test('a suppressed future cue survives failure of its preceding alarm', () {
+    schedule([
+      const SoundEvent(SoundKind.alarm, 1000, 1049),
+      const SoundEvent(SoundKind.alarm, 3000, 3049),
+    ]);
+    expect(audio.liveStarts, [1]);
     clock.nowMs = 1500;
     audio.state('interrupted');
-    schedule([const SoundEvent(SoundKind.alarm, 3000, 3049)]);
     audio.state('running');
     expect(audio.liveStarts, [1.5]);
     audio.advance(1.501);
     expect(audio.played, hasLength(1));
-  });
-
-  test('planned spacing rejects close cues without delaying them', () {
-    schedule([
-      const SoundEvent(SoundKind.alarm, 0, 49),
-      const SoundEvent(SoundKind.alarm, 2999, 3048),
-      const SoundEvent(SoundKind.alarm, 3100, 3149),
-    ]);
-    expect(audio.startTimes, [0, 3.1]);
   });
 
   for (final jitterMs in [1, 25, 49]) {
@@ -370,11 +430,11 @@ void main() {
       backend.setVolume(percent);
       expect(audio.gain.value, closeTo(gain, 0.000001));
     }
-    expect(audio.startTimes, hasLength(5));
+    expect(audio.startTimes, hasLength(3));
   });
 
   test(
-    'dispose stops end tail, removes listener and ignores further work',
+    'dispose stops the end tail, removes listeners and ignores further work',
     () async {
       schedule([end]);
       audio.advance(10.1);
@@ -383,11 +443,13 @@ void main() {
       expect(audio.liveStarts, isEmpty);
       expect(audio.context.state, 'closed');
       audio.visible('visible');
-      backend.unlock();
+      for (final type in ['pointerdown', 'pointerup', 'touchend', 'keydown']) {
+        audio.activate(type);
+      }
       schedule([alarm]);
-      await flushBrowserPromises();
+      await pumpEventQueue(times: 2);
       expect(audio.resumeCalls, 0);
-      expect(audio.startTimes, hasLength(3));
+      expect(audio.startTimes, hasLength(1));
     },
   );
 }

@@ -28,11 +28,11 @@ class TimerScreen extends StatelessWidget {
         TimerPhase.active => (strings.activeTimeLabel, const Color(0xff1a9f0b)),
         TimerPhase.rest => (strings.restTimeLabel, const Color(0xffab0606)),
       };
-      return LayoutBuilder(
+      return InstantScrollView(
         builder: (context, constraints) {
-          final width = math.min(constraints.maxWidth, 640.0);
+          final width = constraints.maxWidth;
           final status = label.toUpperCase();
-          final set = strings.setCount(math.max(1, value.set));
+          final set = '${math.max(1, value.set)}';
           final seconds = '${value.seconds}';
           final gap = nativeDimension(context, 20);
           final bottomGap = nativeDimension(context, 28);
@@ -51,61 +51,58 @@ class TimerScreen extends StatelessWidget {
             ),
           );
           final buttonSize = nativeDimension(context, size);
-          return Center(
-            child: InstantScrollView(
-              child: SizedBox(
-                width: width,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              NativeText(strings.setLabel, size: 24),
+              NativeText(set, size: 64),
+              SizedBox(height: gap),
+              NativeText(status, size: 65, color: color, bold: true),
+              SizedBox(height: gap),
+              RepaintBoundary(
+                child: NativeText(seconds, size: 150, bold: true),
+              ),
+              SizedBox(height: bottomGap),
+              RepaintBoundary(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    NativeText(strings.setLabel, size: 24),
-                    NativeText(set, size: 64),
-                    SizedBox(height: gap),
-                    NativeText(status, size: 65, color: color, bold: true),
-                    SizedBox(height: gap),
-                    NativeText(seconds, size: 150, bold: true),
-                    SizedBox(height: bottomGap),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircleControl(
-                          label: value.mode == TimerMode.paused
-                              ? strings.resume
-                              : strings.pause,
-                          symbol: value.mode == TimerMode.paused
-                              ? ControlSymbol.play
-                              : ControlSymbol.pause,
-                          size: buttonSize,
-                          onPressed: controller.togglePause,
+                    CircleControl(
+                      label: value.mode == TimerMode.paused
+                          ? strings.resume
+                          : strings.pause,
+                      symbol: value.mode == TimerMode.paused
+                          ? ControlSymbol.play
+                          : ControlSymbol.pause,
+                      size: buttonSize,
+                      onPressed: controller.togglePause,
+                    ),
+                    SizedBox(width: nativeDimension(context, 30)),
+                    CircleControl(
+                      label: strings.stop,
+                      symbol: ControlSymbol.stop,
+                      size: buttonSize,
+                      onPressed: controller.stop,
+                    ),
+                    SizedBox(width: nativeDimension(context, 16)),
+                    SizedBox(
+                      width: nativeDimension(context, 48),
+                      height: buttonSize,
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: controller.volume,
+                        builder: (context, volume, _) => VolumeControl(
+                          label: strings.volume,
+                          percent: volume,
+                          onChanged: controller.changeVolume,
+                          onStep: controller.stepVolume,
                         ),
-                        SizedBox(width: nativeDimension(context, 30)),
-                        CircleControl(
-                          label: strings.stop,
-                          symbol: ControlSymbol.stop,
-                          size: buttonSize,
-                          onPressed: controller.stop,
-                        ),
-                        SizedBox(width: nativeDimension(context, 16)),
-                        SizedBox(
-                          width: nativeDimension(context, 48),
-                          height: buttonSize,
-                          child: ValueListenableBuilder<int>(
-                            valueListenable: controller.volume,
-                            builder: (context, volume, _) => VolumeControl(
-                              label: strings.volume,
-                              percent: volume,
-                              onChanged: controller.changeVolume,
-                              onStep: controller.stepVolume,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
+            ],
           );
         },
       );

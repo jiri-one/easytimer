@@ -17,10 +17,10 @@ class SettingsScreen extends StatefulWidget {
   final WorkoutController controller;
 
   @override
-  State<SettingsScreen> createState() => SettingsScreenState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> {
   late final WorkoutOptions _defaults = widget.controller.settings.options;
   late final _active = TextEditingController(text: '${_defaults.active}');
   late final _rest = TextEditingController(text: '${_defaults.rest}');
@@ -35,7 +35,7 @@ class SettingsScreenState extends State<SettingsScreen> {
     fallback: _defaults,
   );
 
-  void start() {
+  void _start() {
     Focus.of(context).requestFocus();
     widget.controller.start(_options);
   }
@@ -133,7 +133,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                       hint: hint,
                       semanticHint: semanticHint,
                       onChanged: _save,
-                      onSubmitted: start,
+                      onSubmitted: _start,
                     ),
                   ),
                   NumberStepButton(
@@ -147,51 +147,46 @@ class SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         );
-        return Center(
-          child: InstantScrollView(
-            child: SizedBox(
-              width: math.min(constraints.maxWidth, 640),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  field(
-                    strings.activeTimeLabel,
-                    _active,
-                    strings.decreaseActiveTime,
-                    strings.increaseActiveTime,
-                    () => _change(_active, _defaults.active, 5, -5),
-                    () => _change(_active, _defaults.active, 5, 5),
-                  ),
-                  SizedBox(height: dimension(20)),
-                  field(
-                    strings.restTimeLabel,
-                    _rest,
-                    strings.decreaseRestTime,
-                    strings.increaseRestTime,
-                    () => _change(_rest, _defaults.rest, 0, -5),
-                    () => _change(_rest, _defaults.rest, 0, 5),
-                  ),
-                  SizedBox(height: dimension(20)),
-                  field(
-                    strings.setsLabel,
-                    _sets,
-                    strings.decreaseSets,
-                    strings.increaseSets,
-                    () => _change(_sets, 0, 0, -1, emptyZero: true),
-                    () => _change(_sets, 0, 0, 1, emptyZero: true),
-                    hint: '∞',
-                    semanticHint: strings.unlimited,
-                  ),
-                  SizedBox(height: dimension(30)),
-                  CircleControl(
-                    label: strings.start,
-                    symbol: ControlSymbol.play,
-                    size: dimension(100),
-                    onPressed: start,
-                  ),
-                ],
+        return InstantScrollView(
+          builder: (context, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              field(
+                strings.activeTimeLabel,
+                _active,
+                strings.decreaseActiveTime,
+                strings.increaseActiveTime,
+                () => _change(_active, _defaults.active, 5, -5),
+                () => _change(_active, _defaults.active, 5, 5),
               ),
-            ),
+              SizedBox(height: dimension(20)),
+              field(
+                strings.restTimeLabel,
+                _rest,
+                strings.decreaseRestTime,
+                strings.increaseRestTime,
+                () => _change(_rest, _defaults.rest, 0, -5),
+                () => _change(_rest, _defaults.rest, 0, 5),
+              ),
+              SizedBox(height: dimension(20)),
+              field(
+                strings.setsLabel,
+                _sets,
+                strings.decreaseSets,
+                strings.increaseSets,
+                () => _change(_sets, 0, 0, -1, emptyZero: true),
+                () => _change(_sets, 0, 0, 1, emptyZero: true),
+                hint: '∞',
+                semanticHint: strings.unlimited,
+              ),
+              SizedBox(height: dimension(30)),
+              CircleControl(
+                label: strings.start,
+                symbol: ControlSymbol.play,
+                size: dimension(100),
+                onPressed: _start,
+              ),
+            ],
           ),
         );
       },

@@ -13,7 +13,7 @@ class TimerSettings {
 
   final SharedPreferences? preferences;
   WorkoutOptions options;
-  int volumePercent;
+  final int volumePercent;
 
   static int? _duration(Object? value) =>
       value is num && value.isFinite && value >= 0 && value <= 9999
@@ -25,10 +25,7 @@ class TimerSettings {
 
   static int _savedVolume(SharedPreferences? preferences) {
     final percent = preferences?.get('volumePercent');
-    if (percent is num && percent.isFinite) return _percent(percent);
-    // The legacy fraction can have JSON's integer spelling of 1.0.
-    final legacy = preferences?.get('volume');
-    return legacy is num ? _percent(legacy * 100) : 100;
+    return percent is num ? _percent(percent) : 100;
   }
 
   static Future<TimerSettings> load({
@@ -52,10 +49,7 @@ class TimerSettings {
     }
   }
 
-  Future<void> saveVolume(int percent) async {
-    volumePercent = percent;
-    await _save('volumePercent', percent);
-  }
+  Future<void> saveVolume(int percent) => _save('volumePercent', percent);
 
   Future<void> _save(String key, int value) async {
     if (preferences == null || preferences!.get(key) == value) return;

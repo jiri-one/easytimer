@@ -18,13 +18,5 @@
   "decreaseSets": "Decrease Sets",
   "increaseSets": "Increase Sets",
   "volume": "Volume",
-  "setCount": "{set}",
-  "@setCount": {
-    "placeholders": {
-      "set": {
-        "type": "int"
-      }
-    }
-  },
   "unlimited": "Unlimited"
 }

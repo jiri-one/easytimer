@@ -11,19 +11,23 @@ void main() {
   final preferenceCases = <(Map<String, Object>, (int, int, int, int))>[
     ({}, (45, 15, 0, 100)),
     (
-      {'activeTime': 60, 'restTime': 20, 'sets': 8, 'volume': .4},
+      {'activeTime': 60, 'restTime': 20, 'sets': 8, 'volumePercent': 40},
       (60, 20, 8, 40),
     ),
-    ({'activeTime': 0, 'restTime': 0, 'sets': 0, 'volume': -1.0}, (5, 0, 0, 0)),
     (
-      {'activeTime': -1, 'restTime': -2, 'sets': -3, 'volume': 2.0},
+      {'activeTime': 0, 'restTime': 0, 'sets': 0, 'volumePercent': -1},
+      (5, 0, 0, 0),
+    ),
+    (
+      {'activeTime': -1, 'restTime': -2, 'sets': -3, 'volumePercent': 200},
       (45, 15, 0, 100),
     ),
     (
-      {'activeTime': 60.0, 'restTime': 20.0, 'sets': 8.0, 'volume': 1},
-      (60, 20, 8, 100),
+      {'activeTime': 60.0, 'restTime': 20.0, 'sets': 8.0, 'volumePercent': 1},
+      (60, 20, 8, 1),
     ),
     ({'volumePercent': 35.0, 'volume': .9}, (45, 15, 0, 35)),
+    ({'volume': .35}, (45, 15, 0, 100)),
     (
       {'activeTime': -.4, 'restTime': 10000, 'sets': double.infinity},
       (45, 15, 0, 100),
@@ -32,23 +36,23 @@ void main() {
       ('activeTime', '45'),
       ('restTime', true),
       ('sets', <String>['2']),
-      ('volume', 'loud'),
-      ('volume', double.nan),
-      ('volume', double.infinity),
+      ('volumePercent', 'loud'),
+      ('volumePercent', double.nan),
+      ('volumePercent', double.infinity),
     ])
       (
         {
           'activeTime': 60,
           'restTime': 20,
           'sets': 8,
-          'volume': .4,
+          'volumePercent': 40,
           key: invalid,
         },
         (
           key == 'activeTime' ? 45 : 60,
           key == 'restTime' ? 15 : 20,
           key == 'sets' ? 0 : 8,
-          key == 'volume' ? 100 : 40,
+          key == 'volumePercent' ? 100 : 40,
         ),
       ),
   ];
@@ -80,33 +84,34 @@ void main() {
         settings.options.sets,
         settings.volumePercent,
       ),
-      (25, 0, 4, 70),
+      (25, 0, 4, 100),
     );
     final broken = TimerSettings(RecordingPreferences()..failWrites = true);
     await broken.saveOptions(const WorkoutOptions(active: 30));
     await broken.saveVolume(50);
-    expect((broken.options.active, broken.volumePercent), (30, 50));
+    expect((broken.options.active, broken.volumePercent), (30, 100));
   });
 
   test(
-    'writes only changed keys and migrates legacy fractional volume',
+    'writes only changed keys through the percent persistence path',
     () async {
       final preferences = RecordingPreferences({
         'activeTime': 45,
         'restTime': 15,
         'sets': 0,
-        'volume': .35,
+        'volumePercent': 35,
       });
       final settings = TimerSettings(preferences);
       await settings.saveOptions(const WorkoutOptions());
       expect(preferences.writes, isEmpty);
       await settings.saveOptions(const WorkoutOptions(rest: 20));
-      await settings.saveVolume(settings.volumePercent);
-      expect(preferences.writes, [('restTime', 20), ('volumePercent', 35)]);
+      await settings.saveVolume(40);
+      expect(preferences.writes, [('restTime', 20), ('volumePercent', 40)]);
       await settings.saveOptions(const WorkoutOptions(rest: 20));
-      await settings.saveVolume(35);
+      await settings.saveVolume(40);
       expect(preferences.writes, hasLength(2));
-      expect(TimerSettings(preferences).volumePercent, 35);
+      expect(settings.volumePercent, 35);
+      expect(TimerSettings(preferences).volumePercent, 40);
     },
   );
 
@@ -127,13 +132,7 @@ void main() {
       controller.start(const WorkoutOptions(active: 5, rest: 0, sets: 1));
       await tester.pump();
       expect(controller.showingTimer.value, isTrue);
-      expect(platform.calls, [
-        'setVolume',
-        'unlock',
-        'cancel',
-        'keepAwake',
-        'schedule',
-      ]);
+      expect(platform.calls, ['setVolume', 'cancel', 'keepAwake', 'schedule']);
       expect((screens, displays), (1, 1));
       expect(controller.settings.preferences!.get('activeTime'), 5);
       await advanceClock(tester, clock, 60000);
@@ -188,7 +187,6 @@ void main() {
           ),
           (phase, remaining),
         );
-        expect(platform.unlocks, 2);
         controller.stop();
         expect(controller.display.value, same(stoppedSnapshot));
         expect(controller.showingTimer.value, isFalse);
@@ -263,13 +261,14 @@ void main() {
       TimerSettings(preferences),
       platform,
       clock: FakeClock(),
+      keepAwake: platform.keepAwake,
     );
     controller.start(const WorkoutOptions());
     controller.changeVolume(40);
     controller.dispose();
     await tester.pump(const Duration(seconds: 10));
     expect(preferences.get('volumePercent'), 40);
-    expect(platform.disposed, isTrue);
+    expect(platform.cancellations, 2);
     expect(platform.awake.last, isFalse);
   });
 }

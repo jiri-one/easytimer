@@ -64,10 +64,5 @@ class AppLocalizationsFr extends AppLocalizations {
   String get volume => 'Volume';
 
   @override
-  String setCount(int set) {
-    return '$set';
-  }
-
-  @override
   String get unlimited => 'Illimité';
 }

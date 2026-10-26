@@ -212,12 +212,6 @@ abstract class AppLocalizations {
   /// **'Volume'**
   String get volume;
 
-  /// No description provided for @setCount.
-  ///
-  /// In en, this message translates to:
-  /// **'{set}'**
-  String setCount(int set);
-
   /// No description provided for @unlimited.
   ///
   /// In en, this message translates to:

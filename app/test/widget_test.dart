@@ -19,19 +19,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'test_support.dart';
 
-class _CountingScaler extends TextScaler {
-  const _CountingScaler(this.onScale);
-  final VoidCallback onScale;
-  @override
-  double scale(double fontSize) {
-    onScale();
-    return fontSize;
-  }
-
-  @override
-  double get textScaleFactor => 1;
-}
-
 void main() {
   late FakeClock clock;
   late RecordingTimerPlatform platform;
@@ -219,32 +206,42 @@ void main() {
     expect(find.text('Active'), findsOneWidget);
   });
 
-  timerTest(
-    'pointer and consumed keys unlock audio without retaining handlers',
-    (tester) async {
-      await mount(tester);
-      for (final position in [
-        const Offset(4, 4),
-        tester.getCenter(find.byType(EditableText).first),
-      ]) {
-        final before = platform.unlocks;
-        final touch = await tester.startGesture(position);
-        expect(platform.unlocks, before + 1);
-        await touch.up();
+  timerTest('Space and Start use synchronized empty and invalid field edits', (
+    tester,
+  ) async {
+    (int, int, int) values(WorkoutOptions options) =>
+        (options.active, options.rest, options.sets);
+
+    for (final (inputs, expected) in [
+      (['', '', ''], (65, 25, 0)),
+      (['0', '0', '0000'], (5, 0, 0)),
+      (['12x', '99999', '3x'], (12, 9999, 3)),
+    ]) {
+      for (final space in [false, true]) {
+        await controller.settings.saveOptions(
+          const WorkoutOptions(active: 65, rest: 25, sets: 4),
+        );
+        await mount(tester);
+        for (var index = 0; index < inputs.length; index++) {
+          await tester.enterText(
+            find.byType(EditableText).at(index),
+            inputs[index],
+          );
+        }
+        expect(values(controller.settings.options), expected);
+        if (space) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        } else {
+          await tester.tap(find.bySemanticsLabel('Start'));
+        }
         await tester.pump();
+        expect(controller.showingTimer.value, isTrue);
+        expect(values(controller.engine.options), expected);
+        controller.stop();
+        await tester.pumpWidget(const SizedBox());
       }
-      await focusControl(tester, find.byType(NumberStepButton).first);
-      final before = platform.unlocks;
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      expect(platform.unlocks, before + 1);
-      await tester.pumpWidget(const SizedBox());
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
-      expect(platform.unlocks, before + 1);
-      await mount(tester);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
-      expect(platform.unlocks, before + 2);
-    },
-  );
+    }
+  });
 
   timerTest(
     'settings focus, hover, press and editing remain static and native',
@@ -307,7 +304,7 @@ void main() {
         expect(
           tester
               .widgetList<Text>(find.byType(Text))
-              .every((text) => text.style?.fontFamily != 'MaterialIcons'),
+              .every((text) => text.style?.fontFamily == 'Roboto'),
           isTrue,
         );
       }
@@ -322,13 +319,11 @@ void main() {
       await mount(tester);
       final slider = find.byType(VolumeControl);
       await focusControl(tester, slider);
-      final before = platform.unlocks;
       await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
       await staticFrame(tester);
       expect(controller.volume.value, 90);
-      expect(platform.unlocks, before + 2);
       for (final (key, expected) in [
         (LogicalKeyboardKey.arrowUp, 95),
         (LogicalKeyboardKey.arrowLeft, 90),
@@ -371,6 +366,10 @@ void main() {
       expect(platform.volumes.last, 0);
       expect(controller.settings.preferences!.getInt('volumePercent'), 0);
       expect(tester.getSemantics(find.bySemanticsLabel('Volume')).value, '0%');
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('Volume')).decreasedValue,
+        '0%',
+      );
       final bounds = tester.getRect(slider);
       expect(bounds.width, greaterThanOrEqualTo(48));
       expect(bounds.height, greaterThanOrEqualTo(64));
@@ -378,6 +377,12 @@ void main() {
         await tester.tapAt(Offset(bounds.center.dx, y));
         await staticFrame(tester);
         expect(controller.volume.value, expected);
+        if (expected == 100) {
+          expect(
+            tester.getSemantics(find.bySemanticsLabel('Volume')).increasedValue,
+            '100%',
+          );
+        }
       }
       final drag = await tester.startGesture(
         Offset(bounds.center.dx, bounds.bottom - 16),
@@ -512,7 +517,7 @@ void main() {
       ]) {
         final style = tester.widget<Text>(find.text(text)).style!;
         expect(style.fontSize, size);
-        expect(style.fontFamily, 'DroidSansMono');
+        expect(style.fontFamily, 'Roboto');
       }
       if (height == 400) {
         expect(buttons.first.size, 64);
@@ -524,37 +529,4 @@ void main() {
       }
     }
   });
-
-  timerTest(
-    'text measurements reuse digits and invalidate after font changes',
-    (tester) async {
-      var calls = 0;
-      final scaler = _CountingScaler(() => calls++);
-      late BuildContext context;
-      await tester.pumpWidget(
-        MediaQuery(
-          data: MediaQueryData(textScaler: scaler),
-          child: Directionality(
-            textDirection: TextDirection.ltr,
-            child: Builder(
-              builder: (value) {
-                context = value;
-                return const SizedBox();
-              },
-            ),
-          ),
-        ),
-      );
-      final height = NativeText.measure(context, '123', 31, 300);
-      final measured = calls;
-      expect(NativeText.measure(context, '456', 31, 300), height);
-      expect(calls, measured);
-      NativeText.measure(context, '1234', 31, 300);
-      expect(calls, greaterThan(measured));
-      await tester.binding.handleSystemMessage({'type': 'fontsChange'});
-      final before = calls;
-      expect(NativeText.measure(context, '123', 31, 300), height);
-      expect(calls, greaterThan(before));
-    },
-  );
 }

@@ -24,20 +24,10 @@ class EasyTimerApp extends StatefulWidget {
 
 class _EasyTimerAppState extends State<EasyTimerApp>
     with WidgetsBindingObserver {
-  final _settingsKey = GlobalKey<SettingsScreenState>();
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    HardwareKeyboard.instance.addHandler(_unlockOnKeyEvent);
-  }
-
-  bool _unlockOnKeyEvent(KeyEvent event) {
-    if (event is KeyDownEvent || event is KeyRepeatEvent) {
-      widget.controller.platform.unlock();
-    }
-    return false;
   }
 
   @override
@@ -47,7 +37,6 @@ class _EasyTimerAppState extends State<EasyTimerApp>
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_unlockOnKeyEvent);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -56,20 +45,12 @@ class _EasyTimerAppState extends State<EasyTimerApp>
     final dark = brightness == Brightness.dark;
     return ThemeData(
       brightness: brightness,
-      fontFamily: 'DroidSansMono',
       scaffoldBackgroundColor: dark
           ? const Color(0xff303030)
           : const Color(0xfffafafa),
       colorScheme: ColorScheme.fromSeed(
         seedColor: const Color(0xff1a9f0b),
         brightness: brightness,
-      ),
-      splashFactory: NoSplash.splashFactory,
-      highlightColor: Colors.transparent,
-      hoverColor: Colors.transparent,
-      shadowColor: Colors.transparent,
-      textSelectionTheme: TextSelectionThemeData(
-        cursorColor: dark ? Colors.white : Colors.black,
       ),
     );
   }
@@ -89,11 +70,6 @@ class _EasyTimerAppState extends State<EasyTimerApp>
       scrollbars: false,
       overscroll: false,
     ),
-    builder: (context, child) => Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => widget.controller.platform.unlock(),
-      child: child,
-    ),
     home: ValueListenableBuilder<bool>(
       valueListenable: widget.controller.showingTimer,
       builder: (context, showingTimer, _) => CallbackShortcuts(
@@ -102,7 +78,7 @@ class _EasyTimerAppState extends State<EasyTimerApp>
             if (widget.controller.showingTimer.value) {
               widget.controller.togglePause();
             } else {
-              _settingsKey.currentState?.start();
+              widget.controller.start(widget.controller.settings.options);
             }
           },
           const SingleActivator(LogicalKeyboardKey.escape): () {
@@ -126,10 +102,7 @@ class _EasyTimerAppState extends State<EasyTimerApp>
               body: SafeArea(
                 child: showingTimer
                     ? TimerScreen(controller: widget.controller)
-                    : SettingsScreen(
-                        key: _settingsKey,
-                        controller: widget.controller,
-                      ),
+                    : SettingsScreen(controller: widget.controller),
               ),
             ),
           ),

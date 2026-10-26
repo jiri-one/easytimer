@@ -46,8 +46,8 @@ class _VolumeControlState extends State<VolumeControl> {
         focused: _focus.hasFocus,
         onFocus: _focus.requestFocus,
         value: '${widget.percent}%',
-        increasedValue: '${widget.percent > 95 ? 100 : widget.percent + 5}%',
-        decreasedValue: '${widget.percent < 5 ? 0 : widget.percent - 5}%',
+        increasedValue: '${(widget.percent + 5).clamp(0, 100)}%',
+        decreasedValue: '${(widget.percent - 5).clamp(0, 100)}%',
         onIncrease: () => widget.onStep(5),
         onDecrease: () => widget.onStep(-5),
         child: Focus(

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 
 // Caret reveal and focus traversal must not introduce scrolling animations.
@@ -33,9 +35,9 @@ class _InstantScrollPosition extends ScrollPositionWithSingleContext {
 }
 
 class InstantScrollView extends StatefulWidget {
-  const InstantScrollView({super.key, required this.child});
+  const InstantScrollView({super.key, required this.builder});
 
-  final Widget child;
+  final LayoutWidgetBuilder builder;
 
   @override
   State<InstantScrollView> createState() => _InstantScrollViewState();
@@ -51,9 +53,21 @@ class _InstantScrollViewState extends State<InstantScrollView> {
   }
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    controller: _scroll,
-    physics: const ClampingScrollPhysics(),
-    child: widget.child,
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final capped = constraints.loosen().copyWith(
+        maxWidth: math.min(constraints.maxWidth, 640),
+      );
+      return Center(
+        child: SingleChildScrollView(
+          controller: _scroll,
+          physics: const ClampingScrollPhysics(),
+          child: SizedBox(
+            width: capped.maxWidth,
+            child: widget.builder(context, capped),
+          ),
+        ),
+      );
+    },
   );
 }

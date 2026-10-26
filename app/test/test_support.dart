@@ -1,4 +1,7 @@
-import 'package:easytimer/constants.dart';
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:easytimer/platform/timer_platform.dart';
 import 'package:easytimer/settings.dart';
 import 'package:easytimer/timer_engine.dart';
@@ -6,6 +9,8 @@ import 'package:easytimer/workout_controller.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+const fontAsset = 'assets/fonts/DroidSansMono.ttf';
 
 class FakeClock implements MonotonicClock {
   FakeClock([this._nowMs = 0]);
@@ -55,7 +60,7 @@ Future<void> advanceClock(
 }
 
 Future<void> loadAppFont() =>
-    (FontLoader('DroidSansMono')..addFont(rootBundle.load(fontAsset))).load();
+    (FontLoader('Roboto')..addFont(rootBundle.load(fontAsset))).load();
 
 Future<WorkoutController> createTestController(
   WidgetTester tester, {
@@ -64,10 +69,12 @@ Future<WorkoutController> createTestController(
   RecordingTimerPlatform? platform,
 }) async {
   SharedPreferences.setMockInitialValues(preferences);
+  final recording = platform ?? RecordingTimerPlatform();
   final controller = WorkoutController(
     await TimerSettings.load(),
-    platform ?? RecordingTimerPlatform(),
+    recording,
     clock: clock ?? FakeClock(),
+    keepAwake: recording.keepAwake,
   );
   addTearDown(tester.view.reset);
   addTearDown(controller.dispose);
@@ -75,13 +82,10 @@ Future<WorkoutController> createTestController(
 }
 
 class RecordedSchedule {
-  RecordedSchedule(List<SoundEvent> events, this.clock)
-    : events = List.unmodifiable(events),
-      atMs = clock.nowMs;
+  RecordedSchedule(List<SoundEvent> events)
+    : events = List.unmodifiable(events);
 
   final List<SoundEvent> events;
-  final MonotonicClock clock;
-  final int atMs;
 }
 
 class RecordingTimerPlatform extends TimerPlatform {
@@ -89,23 +93,15 @@ class RecordingTimerPlatform extends TimerPlatform {
   final schedules = <RecordedSchedule>[];
   final volumes = <int>[];
   final awake = <bool>[];
-  int unlocks = 0;
   int cancellations = 0;
-  bool disposed = false;
 
   @override
   Future<void> initialize() async => calls.add('initialize');
 
   @override
-  void unlock() {
-    calls.add('unlock');
-    unlocks++;
-  }
-
-  @override
-  void schedule(List<SoundEvent> events, MonotonicClock clock) {
+  void schedule(List<SoundEvent> events) {
     calls.add('schedule');
-    schedules.add(RecordedSchedule(events, clock));
+    schedules.add(RecordedSchedule(events));
   }
 
   @override
@@ -120,15 +116,96 @@ class RecordingTimerPlatform extends TimerPlatform {
     volumes.add(percent);
   }
 
-  @override
   void keepAwake(bool enabled) {
     calls.add('keepAwake');
     awake.add(enabled);
   }
+}
+
+class FakeAudioPlayer implements AudioPlayer {
+  FakeAudioPlayer(this.clock);
+
+  final FakeClock clock;
+  final calls = <(String, Object?)>[];
+  final starts = <(SoundKind, int)>[];
+  final attempts = <int>[];
+  FutureOr<void> Function(String) respond = (_) {};
+  @override
+  Source? source;
+  @override
+  PlayerState state = PlayerState.stopped;
+  @override
+  double volume = 1;
+
+  bool get playing => state == PlayerState.playing;
+
+  SoundKind get currentKind {
+    final value = source;
+    if (value is BytesSource) {
+      return ByteData.sublistView(value.bytes).getUint16(22, Endian.little) == 1
+          ? SoundKind.alarm
+          : SoundKind.end;
+    }
+    return (value as DeviceFileSource).path.endsWith('/end.wav')
+        ? SoundKind.end
+        : SoundKind.alarm;
+  }
+
+  Future<void> _call(String method, [Object? value]) async {
+    calls.add((method, value));
+    await respond(method);
+  }
 
   @override
-  void dispose() {
-    calls.add('dispose');
-    disposed = true;
+  Future<void> setPlayerMode(PlayerMode mode) => _call('mode', mode);
+  @override
+  Future<void> setReleaseMode(ReleaseMode mode) => _call('release', mode);
+  @override
+  Future<void> setAudioContext(AudioContext context) =>
+      _call('context', context);
+  @override
+  Future<void> setSource(Source source) async {
+    this.source = source;
+    await _call('source', source);
   }
+
+  @override
+  Future<void> setSourceBytes(Uint8List bytes, {String? mimeType}) =>
+      setSource(BytesSource(bytes, mimeType: mimeType));
+
+  @override
+  Future<void> setSourceDeviceFile(String path, {String? mimeType}) async {
+    source = DeviceFileSource(path, mimeType: mimeType);
+    await _call('file', path);
+  }
+
+  @override
+  Future<void> resume() async {
+    attempts.add(clock.nowMs);
+    await _call('resume');
+    starts.add((currentKind, clock.nowMs));
+    state = PlayerState.playing;
+  }
+
+  @override
+  Future<void> stop() async {
+    await _call('stop');
+    state = PlayerState.stopped;
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    this.volume = volume;
+    await _call('volume', volume);
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _call('dispose');
+    state = PlayerState.disposed;
+    source = null;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

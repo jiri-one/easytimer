@@ -1,39 +1,71 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
-import '../constants.dart';
+import '../audio.dart';
 import '../cue_policy.dart';
 import '../timer_engine.dart';
 import 'timer_platform.dart';
 
-class PlatformBackend extends TimerPlatform {
-  PlatformBackend({AudioPlayer? player})
-    : _player = player ?? (AudioPlayer()..positionUpdater = null) {
-    _completion = _player.onPlayerComplete.listen(
-      (_) => _completed(),
-      onError: (Object _) {
-        _playing = null;
-        _endRemaining = 0;
-      },
-    );
+class _CachedBytesSource extends BytesSource {
+  _CachedBytesSource(this.kind, super.bytes) : super(mimeType: 'audio/wav');
+
+  final SoundKind kind;
+  Future<void>? _preparation;
+  String? _path;
+
+  Future<void> _prepare() async {
+    final cache = await getApplicationCacheDirectory();
+    final directory = await Directory('${cache.path}/audio')
+        .create(recursive: true);
+    final file = File('${directory.path}/${kind.name}.wav');
+    if (!await file.exists() || !listEquals(await file.readAsBytes(), bytes)) {
+      await file.writeAsBytes(bytes, flush: true);
+    }
+    _path = file.path;
   }
 
+  @override
+  Future<void> setOnPlayer(AudioPlayer player) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      // The plugin's process-randomized byte hash leaves a new file each launch.
+      try {
+        await (_preparation ??= _prepare());
+      } catch (_) {
+        _preparation = null;
+        rethrow;
+      }
+      await player.setSourceDeviceFile(_path!, mimeType: mimeType);
+    } else {
+      await super.setOnPlayer(player);
+    }
+  }
+
+  bool matches(Source? source) =>
+      source is BytesSource && identical(source.bytes, bytes) ||
+      source is DeviceFileSource && source.path == _path;
+}
+
+class PlatformBackend extends TimerPlatform {
+  PlatformBackend(this._clock, {AudioPlayer? player})
+    : _player = player ?? (AudioPlayer()..positionUpdater = null);
+
+  final MonotonicClock _clock;
   final AudioPlayer _player;
   final _policy = CuePolicy();
-  final _pending = <CueId, SoundEvent>{};
-  late final StreamSubscription<void> _completion;
+  final _sources = <SoundKind, _CachedBytesSource>{};
   Future<void> _operations = Future.value();
   Future<void>? _initialization;
-  MonotonicClock? _clock;
+  Future<void>? _volumeUpdate;
   Timer? _timer;
   SoundEvent? _inFlight;
-  SoundEvent? _playing;
   int _revision = 0;
-  int _endRemaining = 0;
   double _gain = 1;
   bool _initialized = false;
-  bool _disposed = false;
 
   Future<void> _serial(Future<void> Function() operation) {
     final result = _operations.then((_) => operation());
@@ -44,8 +76,13 @@ class PlatformBackend extends TimerPlatform {
   @override
   Future<void> initialize() => _initialization ??=
       _serial(() async {
-        if (_disposed) return;
-        // SoundPool has no completion events for the three finish hits.
+        if (_sources.isEmpty) {
+          final bytes = await Future.wait(SoundKind.values.map(loadSound));
+          for (final kind in SoundKind.values) {
+            _sources[kind] = _CachedBytesSource(kind, bytes[kind.index]);
+          }
+        }
+        // SoundPool does not report reliable completion, so player state goes stale.
         await _player.setPlayerMode(PlayerMode.mediaPlayer);
         await _player.setReleaseMode(ReleaseMode.stop);
         await _player.setAudioContext(
@@ -57,121 +94,67 @@ class PlatformBackend extends TimerPlatform {
             ),
           ),
         );
-        await _player.setSource(AssetSource(alarmAsset.substring(7)));
-        await _player.setVolume(_gain);
+        await _player.setSource(_sources[SoundKind.alarm]!);
+        await _applyVolume();
         _initialized = true;
       }).catchError((Object _) {
         _initialization = null;
       });
 
   @override
-  void unlock() {}
-
-  @override
-  void schedule(List<SoundEvent> events, MonotonicClock clock) {
-    if (_disposed) return;
-    _clock = clock;
-    for (final event in events) {
-      if (_policy.allows(event, clock.nowMs)) {
-        _pending.putIfAbsent(event.id, () => event);
-      }
-    }
-    _wake();
+  void schedule(List<SoundEvent> events) {
+    final now = _clock.nowMs;
+    if (_policy.merge(events)) _wake(now);
   }
 
-  void _wake() {
-    _timer?.cancel();
-    _timer = null;
-    if (_disposed || _clock == null) return;
-    final now = _clock!.nowMs;
-    _pending.removeWhere(
-      (_, event) => !identical(event, _inFlight) && !_policy.allows(event, now),
-    );
-    final plan = _pending.values.toList()
-      ..sort((a, b) => a.atMs.compareTo(b.atMs));
+  void _wake(int now) {
+    final plan = _policy.due(now, inFlight: _inFlight?.id);
     if (_inFlight == null && plan.isNotEmpty && plan.first.atMs <= now) {
-      unawaited(_start(plan.first, _clock!, _revision));
+      unawaited(_start(plan.first, _revision));
     }
-    _arm();
+    _arm(plan, now);
   }
 
-  void _arm([int minimumDelay = 0]) {
+  void _arm(List<SoundEvent> plan, int now, [int minimumDelay = 0]) {
     _timer?.cancel();
     _timer = null;
-    if (_disposed || _pending.isEmpty) return;
-    final firstAt = _pending.values
-        .map((event) => event.atMs)
-        .reduce((a, b) => a < b ? a : b);
+    if (plan.isEmpty) return;
+    final firstAt = plan.map((event) => event.atMs).reduce(math.min);
     // Re-read BOOTTIME after suspend instead of trusting a long Dart timer.
     final delay = _inFlight == null
-        ? (firstAt - _clock!.nowMs).clamp(minimumDelay, 1000)
+        ? (firstAt - now).clamp(minimumDelay, 1000)
         : 1000;
-    _timer = Timer(Duration(milliseconds: delay), _wake);
+    _timer = Timer(Duration(milliseconds: delay), () => _wake(_clock.nowMs));
   }
 
-  Future<void> _start(
-    SoundEvent event,
-    MonotonicClock clock,
-    int revision,
-  ) async {
+  Future<void> _start(SoundEvent event, int revision) async {
     _inFlight = event;
-    bool current() => !_disposed && revision == _revision;
+    bool current() => revision == _revision;
+    bool valid() => current() && !_policy.expired(event, _clock.nowMs);
     try {
       await initialize();
       if (!_initialized || !current()) return;
       await _serial(() async {
-        if (!current() || !_policy.allows(event, clock.nowMs)) return;
-        _playing = null;
-        _endRemaining = 0;
-        await _player.stop();
+        if (!valid()) return;
+        if (_player.state == PlayerState.playing) await _player.stop();
         if (!current()) return;
-        final asset = event.kind == SoundKind.alarm ? alarmAsset : endAsset;
-        await _player.setSource(AssetSource(asset.substring(7)));
+        await _player.setSource(_sources[event.kind]!);
         // Loading can outlive an alarm's window or a cancelled plan.
-        if (!current() || !_policy.allows(event, clock.nowMs)) return;
-        _playing = event;
-        _endRemaining = event.kind == SoundKind.end ? 2 : 0;
+        if (!valid()) return;
         await _player.resume();
-        if (current()) _policy.started(event, clock.nowMs);
+        if (current()) _policy.started(event);
       });
     } catch (_) {
-      if (identical(_playing, event)) {
-        _playing = null;
-        _endRemaining = 0;
-      }
+      // A failed alarm remains eligible until its original deadline.
     } finally {
-      if (current() &&
-          (event.kind == SoundKind.end ||
-              _policy.handled(event) ||
-              _policy.expired(event, clock.nowMs))) {
-        _pending.remove(event.id);
-      }
+      if (current()) _policy.failed(event);
       _inFlight = null;
-      _arm(current() && !_policy.handled(event) ? 10 : 0);
+      final now = _clock.nowMs;
+      final delay = current() && event.kind.retries && !_policy.handled(event)
+          ? 10
+          : 0;
+      _arm(_policy.due(now), now, delay);
     }
-  }
-
-  void _completed() {
-    final event = _playing;
-    if (event == null) return;
-    if (event.kind != SoundKind.end || _endRemaining == 0) {
-      _playing = null;
-      return;
-    }
-    _endRemaining--;
-    unawaited(
-      _serial(() async {
-        if (_disposed || !identical(_playing, event)) return;
-        try {
-          await _player.resume();
-        } catch (_) {
-          if (identical(_playing, event)) {
-            _playing = null;
-            _endRemaining = 0;
-          }
-        }
-      }),
-    );
   }
 
   @override
@@ -179,32 +162,34 @@ class PlatformBackend extends TimerPlatform {
     _revision++;
     _timer?.cancel();
     _timer = null;
-    _pending.clear();
     _policy.reset();
-    if (_playing?.kind != SoundKind.end) {
-      _playing = null;
-      _endRemaining = 0;
-      unawaited(_serial(_player.stop));
-    }
+    unawaited(
+      _serial(() async {
+        if (_player.state != PlayerState.playing) return;
+        final keep = _sources.entries.any(
+          (entry) =>
+              entry.key.keepsOnCancel && entry.value.matches(_player.source),
+        );
+        if (!keep) await _player.stop();
+      }).catchError((Object _) {}),
+    );
   }
+
+  Future<void> _applyVolume() => _volumeUpdate ??= () async {
+    double sent;
+    do {
+      sent = _gain;
+      await _player.setVolume(sent);
+    } while (sent != _gain);
+  }().whenComplete(() => _volumeUpdate = null);
 
   @override
   void setVolume(int percent) {
-    if (_disposed) return;
-    final linear = percent / 100;
-    _gain = linear * linear;
-    unawaited(_serial(() => _player.setVolume(_gain)));
-  }
-
-  @override
-  void dispose() {
-    if (_disposed) return;
-    cancel();
-    _disposed = true;
-    _playing = null;
-    _endRemaining = 0;
-    unawaited(_completion.cancel());
-    keepAwake(false);
-    unawaited(_serial(_player.dispose));
+    final gain = gainOf(percent);
+    if (gain == _gain) return;
+    _gain = gain;
+    if (_initialized) {
+      unawaited(_applyVolume().catchError((Object _) {}));
+    }
   }
 }

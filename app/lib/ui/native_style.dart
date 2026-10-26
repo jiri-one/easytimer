@@ -1,14 +1,5 @@
 import 'package:flutter/material.dart';
 
-typedef _TextMeasure = (
-  Object,
-  double,
-  double,
-  bool,
-  TextScaler,
-  TextDirection,
-);
-
 Color nativeTextColor(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
     ? const Color(0xffc1c1c1)
@@ -33,22 +24,12 @@ class NativeText extends StatelessWidget {
   final Color? color;
   final bool bold;
 
-  static final _digits = RegExp(r'^[0-9]+$');
-  static final _heights = _createHeightCache();
-
-  static Map<_TextMeasure, double> _createHeightCache() {
-    final cache = <_TextMeasure, double>{};
-    // Font loading must replace any metrics measured with fallback fonts.
-    PaintingBinding.instance.systemFonts.addListener(cache.clear);
-    return cache;
-  }
-
   // Android TextView includes the font's top/bottom bounds outside its line metrics.
   static EdgeInsets fontPadding(double size) =>
       EdgeInsets.only(top: size * 263 / 2048, bottom: size * 55 / 2048);
 
   static TextStyle style(double size, Color color, bool bold) => TextStyle(
-    fontFamily: 'DroidSansMono',
+    fontFamily: 'Roboto',
     fontSize: size,
     fontWeight: bold ? FontWeight.bold : FontWeight.normal,
     color: color,
@@ -64,17 +45,6 @@ class NativeText extends StatelessWidget {
   }) {
     final scaler = MediaQuery.textScalerOf(context);
     final direction = Directionality.of(context);
-    // Every digit has the same metrics in Droid Sans Mono.
-    final key = (
-      _digits.hasMatch(text) ? text.length : text,
-      size,
-      width,
-      bold,
-      scaler,
-      direction,
-    );
-    final cached = _heights[key];
-    if (cached != null) return cached;
     final painter = TextPainter(
       text: TextSpan(
         text: text,
@@ -85,8 +55,6 @@ class NativeText extends StatelessWidget {
     )..layout(maxWidth: width);
     final result = painter.height + fontPadding(scaler.scale(size)).vertical;
     painter.dispose();
-    if (_heights.length == 128) _heights.remove(_heights.keys.first);
-    _heights[key] = result;
     return result;
   }
 

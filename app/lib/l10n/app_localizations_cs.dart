@@ -64,10 +64,5 @@ class AppLocalizationsCs extends AppLocalizations {
   String get volume => 'Hlasitost';
 
   @override
-  String setCount(int set) {
-    return '$set';
-  }
-
-  @override
   String get unlimited => 'Neomezeně';
 }

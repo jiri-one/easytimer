@@ -54,10 +54,8 @@ class TimerSnapshot {
   int get seconds => (remainingMs + 999) ~/ 1000;
 
   bool sameDisplay(TimerSnapshot other) =>
-      mode == other.mode &&
-      phase == other.phase &&
-      set == other.set &&
-      seconds == other.seconds;
+      (mode, phase, set, seconds) ==
+      (other.mode, other.phase, other.set, other.seconds);
 }
 
 const stoppedSnapshot = TimerSnapshot(

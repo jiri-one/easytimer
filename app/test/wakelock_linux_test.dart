@@ -4,7 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:dbus/dbus.dart';
-import 'package:easytimer/platform/timer_platform.dart';
+import 'package:easytimer/screen_wake_lock.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -60,14 +60,6 @@ class _Portal extends DBusObject {
   }
 }
 
-class _Backend extends TimerPlatform {
-  @override
-  void dispose() => keepAwake(false);
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 Future<void> _until(bool Function() condition) async {
   for (var i = 0; i < 200 && !condition(); i++) {
     await Future<void>.delayed(const Duration(milliseconds: 5));
@@ -91,7 +83,7 @@ void main() {
       final service = DBusClient.session();
       final client = DBusClient.session();
       final portal = _Portal();
-      final backend = _Backend();
+      final wake = ScreenWakeLock();
       final previous = wakelockPlusPlatformInstance;
       try {
         expect(
@@ -108,9 +100,9 @@ void main() {
         );
         wakelockPlusPlatformInstance = plugin;
 
-        backend.keepAwake(true);
-        backend.keepAwake(true);
-        backend.keepAwake(false);
+        wake.setEnabled(true);
+        wake.setEnabled(true);
+        wake.setEnabled(false);
         await _until(
           () => portal.requests.isNotEmpty && portal.requests.single.closed,
         );
@@ -126,17 +118,17 @@ void main() {
         expect(await plugin.enabled, isFalse);
 
         portal.failInhibit = true;
-        backend.keepAwake(true);
+        wake.setEnabled(true);
         await _until(() => portal.calls.length == 2);
         expect(await plugin.enabled, isFalse);
-        backend.keepAwake(true);
+        wake.setEnabled(true);
         await _until(() => portal.requests.length == 2);
         expect(await plugin.enabled, isTrue);
         final request = portal.requests.last..failClose = true;
-        backend.keepAwake(false);
+        wake.setEnabled(false);
         await _until(() => request.closes == 1);
         expect(await plugin.enabled, isTrue);
-        backend.dispose();
+        wake.setEnabled(false);
         await _until(() => request.closed);
         expect(request.closes, 2);
         expect(await plugin.enabled, isFalse);

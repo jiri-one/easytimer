@@ -12,18 +12,7 @@ void main() {
 
   setUpAll(loadAppFont);
 
-  final sizes = [
-    ('phone_150', const Size(824, 1648), 1.5),
-    ('phone_1875', const Size(824, 1648), 1.875),
-    ('phone_250', const Size(824, 1648), 2.5),
-    ('desktop', const Size(420, 760), 1.0),
-    ('short', const Size(640, 400), 1.0),
-    ('wide', const Size(1440, 900), 1.0),
-  ];
-
-  Future<void> capture(
-    WidgetTester tester,
-    String name,
+  Future<void> Function(WidgetTester, String) capture(
     Size size,
     double dpr, {
     bool timer = false,
@@ -33,7 +22,7 @@ void main() {
     bool paused = false,
     int volume = 100,
     bool showControls = false,
-  }) async {
+  }) => (tester, name) async {
     tester.view.devicePixelRatio = dpr;
     tester.view.physicalSize = size;
     final clock = FakeClock();
@@ -78,91 +67,94 @@ void main() {
       controller.stop();
       await tester.pumpWidget(const SizedBox());
     }
-  }
+  };
 
-  for (final (name, physicalSize, dpr) in sizes) {
-    for (final timer in [false, true]) {
-      testWidgets('${timer ? 'timer' : 'settings'} $name', (tester) async {
-        await capture(
-          tester,
-          '${timer ? 'timer' : 'settings'}_$name',
-          physicalSize,
-          dpr,
-          timer: timer,
-        );
-      });
-    }
-  }
-
-  for (final dark in [false, true]) {
-    testWidgets('native timer reference ${dark ? 'dark' : 'light'}', (
-      tester,
-    ) async {
-      await capture(
-        tester,
-        'native_timer_${dark ? 'dark' : 'light'}',
-        const Size(618, 985),
-        1.5,
-        timer: true,
-        time: 5000,
-        dark: dark,
-        volume: 60,
-      );
-    });
-  }
-  testWidgets('short timer controls remain reachable at native size', (
-    tester,
-  ) async {
-    await capture(
-      tester,
-      'timer_short_controls',
+  final captures = {
+    'settings_phone_150': capture(const Size(824, 1648), 1.5),
+    'settings_phone_1875': capture(const Size(824, 1648), 1.875),
+    'settings_phone_250': capture(const Size(824, 1648), 2.5),
+    'settings_desktop': capture(const Size(420, 760), 1),
+    'settings_short': capture(const Size(640, 400), 1),
+    'settings_wide': capture(const Size(1440, 900), 1),
+    'timer_phone_150': capture(const Size(824, 1648), 1.5, timer: true),
+    'timer_phone_1875': capture(const Size(824, 1648), 1.875, timer: true),
+    'timer_phone_250': capture(const Size(824, 1648), 2.5, timer: true),
+    'timer_desktop': capture(const Size(420, 760), 1, timer: true),
+    'timer_short': capture(const Size(640, 400), 1, timer: true),
+    'timer_wide': capture(const Size(1440, 900), 1, timer: true),
+    'native_timer_light': capture(
+      const Size(618, 985),
+      1.5,
+      timer: true,
+      time: 5000,
+      volume: 60,
+    ),
+    'native_timer_dark': capture(
+      const Size(618, 985),
+      1.5,
+      timer: true,
+      time: 5000,
+      dark: true,
+      volume: 60,
+    ),
+    'timer_short_controls': capture(
       const Size(640, 400),
       1,
       timer: true,
       paused: true,
       volume: 0,
       showControls: true,
-    );
-  });
-  for (final dark in [false, true]) {
-    testWidgets('muted outlined thumb ${dark ? 'dark' : 'light'}', (
-      tester,
-    ) async {
-      await capture(
-        tester,
-        'timer_muted_${dark ? 'dark' : 'light'}',
-        const Size(618, 985),
-        1.5,
-        timer: true,
-        time: 5000,
-        paused: true,
-        dark: dark,
-        volume: 0,
-      );
-    });
-  }
-  testWidgets('native settings reference', (tester) async {
-    await capture(tester, 'native_settings', const Size(618, 1125), 1.5);
-  });
+    ),
+    'timer_muted_light': capture(
+      const Size(618, 985),
+      1.5,
+      timer: true,
+      time: 5000,
+      paused: true,
+      volume: 0,
+    ),
+    'timer_muted_dark': capture(
+      const Size(618, 985),
+      1.5,
+      timer: true,
+      time: 5000,
+      paused: true,
+      dark: true,
+      volume: 0,
+    ),
+    'native_settings': capture(const Size(618, 1125), 1.5),
+    'timer_active': capture(
+      const Size(824, 1648),
+      1.875,
+      timer: true,
+      time: 5000,
+    ),
+    'timer_active_dark': capture(
+      const Size(824, 1648),
+      1.875,
+      timer: true,
+      time: 5000,
+      dark: true,
+    ),
+    'timer_rest_dark': capture(
+      const Size(824, 1648),
+      1.875,
+      timer: true,
+      time: 50000,
+      locale: 'cs',
+      dark: true,
+    ),
+    'timer_paused': capture(
+      const Size(824, 1648),
+      1.875,
+      timer: true,
+      time: 8500,
+      locale: 'fr',
+      paused: true,
+    ),
+  };
 
-  for (final (name, time, locale, dark, paused) in [
-    ('active', 5000, 'en', false, false),
-    ('active_dark', 5000, 'en', true, false),
-    ('rest_dark', 50000, 'cs', true, false),
-    ('paused', 8500, 'fr', false, true),
-  ]) {
-    testWidgets('timer $name', (tester) async {
-      await capture(
-        tester,
-        'timer_$name',
-        const Size(824, 1648),
-        1.875,
-        timer: true,
-        time: time,
-        locale: locale,
-        dark: dark,
-        paused: paused,
-      );
-    });
+  for (final entry in captures.entries) {
+    testWidgets(entry.key, (tester) => entry.value(tester, entry.key));
   }
 }

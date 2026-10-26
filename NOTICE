@@ -30,6 +30,10 @@ These audio files are byte-identical to upstream app/src/main/res/raw/:
   app/assets/audio/threesecbeep.wav
     SHA-256: f3a8a128165c2a3c3308e0a1fb58f81f4ab21301952941635eeedb025462b75b
 
+The finish sound repeats hit.wav's PCM samples three times at load time for
+continuous playback. This in-memory buffer and Linux cache leave the bundled
+source WAV files unmodified.
+
 Droid Sans Mono
 ---------------
 Digitized data copyright © 2007, Google Corporation.
@@ -42,7 +46,7 @@ Unmodified Droid Sans Mono, Android's native monospace typeface:
   app/assets/fonts/DroidSansMono.ttf
 SHA-256: db19a1fdaba41cc4a2fec0330e5c15e71c6dd68a3ef074f4f28268828b45c862
 
-The same bundled file is registered under Flutter's default "Roboto" alias
+The bundled file is registered only under Flutter's default "Roboto" alias
 so all build variants use local fonts without contacting a font service.
 
 Original font:
