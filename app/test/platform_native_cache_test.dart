@@ -102,10 +102,7 @@ void main() {
   late Directory cache;
 
   setUp(() async {
-    final root = await Directory(
-      '${Platform.environment['HOME']}/.cache/easytimer-qa/round9',
-    ).create(recursive: true);
-    cache = await root.createTemp('native-audio-');
+    cache = await Directory.systemTemp.createTemp('native-audio-');
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     messenger.setMockMethodCallHandler(channel, (call) async {
       expect(call.method, 'getApplicationCacheDirectory');

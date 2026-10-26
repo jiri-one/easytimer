@@ -39,12 +39,14 @@ flutter analyze
 flutter test --concurrency=4 --no-pub
 flutter test --concurrency=4 --no-pub --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
 flutter test --concurrency=4 --no-pub --wasm --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
-dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart'
 ./tool/build_web.sh
 ./tool/build_web.sh --wasm
 flutter build linux --release
 flutter build apk --release
 ```
+
+Run the isolated Linux portal test using the private-bus setup in the
+[packaging instructions](packaging/README.md).
 
 The web output is `app/build/web/`; serve it over HTTPS (localhost also works for
 development). Screen Wake Lock requires a secure origin and may be denied by the
@@ -64,7 +66,7 @@ pixels at DPR 1.5, 1.875 and 2.5, 420×760 and 640×400 desktop windows, a
 Long French labels and a three-digit countdown are covered too.
 Run the UI, golden and bundled font/licence checks together with
 `flutter test --concurrency=4 --no-pub test/widget_test.dart test/golden_test.dart test/font_manifest_test.dart`.
-Generated localization bindings are tracked, as in EasyDict. Regenerate them
+Generated localization bindings are tracked. Regenerate them
 with `flutter gen-l10n` after editing the ARB files; CI checks the result.
 After an intentional visual change, regenerate goldens with:
 

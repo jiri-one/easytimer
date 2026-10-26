@@ -69,23 +69,111 @@ Future<void> _until(bool Function() condition) async {
   await Future<void>.delayed(const Duration(milliseconds: 5));
 }
 
+String? _privateBusSkipReason(
+  Map<String, String> environment,
+  String Function(String) resolvePath,
+) {
+  final address = environment['DBUS_SESSION_BUS_ADDRESS'];
+  if (address == null ||
+      address.isEmpty ||
+      environment['EASYTIMER_PRIVATE_DBUS'] != address) {
+    return 'Set EASYTIMER_PRIVATE_DBUS exactly to DBUS_SESSION_BUS_ADDRESS.';
+  }
+  final directory = environment['EASYTIMER_TEST_SOCKET_DIR'];
+  if (directory == null || !directory.startsWith('/') || directory == '/') {
+    return 'Set EASYTIMER_TEST_SOCKET_DIR to an absolute test-owned directory.';
+  }
+  try {
+    final parsed = DBusAddress(address);
+    final socket = parsed.properties['path'];
+    if (parsed.transport != 'unix' ||
+        address.contains(';') ||
+        parsed.properties.keys.any((key) => key != 'path' && key != 'guid') ||
+        socket == null ||
+        !socket.startsWith('/')) {
+      return 'Requires one Unix path address, with only an optional guid.';
+    }
+    final root = resolvePath(directory);
+    final path = resolvePath(socket);
+    // Prefix checks alone allow a test path to alias the real session bus.
+    if (root != directory || path != socket) {
+      return 'Socket and directory must use canonical paths without symlinks.';
+    }
+    if (path.startsWith('/run/user/') || !path.startsWith('$root/')) {
+      return 'Socket must stay inside EASYTIMER_TEST_SOCKET_DIR, outside /run/user.';
+    }
+  } on FormatException {
+    return 'Invalid DBUS_SESSION_BUS_ADDRESS.';
+  } on FileSystemException {
+    return 'Socket and EASYTIMER_TEST_SOCKET_DIR must exist on disk.';
+  }
+  return null;
+}
+
 void main() {
-  final address = Platform.environment['DBUS_SESSION_BUS_ADDRESS'];
-  final home = Platform.environment['HOME'];
-  final privateSocket =
-      address != null &&
-      (address.startsWith('unix:path=/tmp/') ||
-          (home != null &&
-              address.startsWith('unix:path=$home/.cache/easytimer-qa/tmp/')));
-  final isolated =
-      Platform.isLinux &&
-      address != null &&
-      privateSocket &&
-      Platform.environment['EASYTIMER_PRIVATE_DBUS'] == address;
+  String? privateBusSkipReason() {
+    if (!Platform.isLinux) return 'Requires Linux.';
+    final reason = _privateBusSkipReason(
+      Platform.environment,
+      (path) => File(path).resolveSymbolicLinksSync(),
+    );
+    if (reason != null &&
+        Platform.environment.containsKey('EASYTIMER_PRIVATE_DBUS')) {
+      return 'Requested private D-Bus test rejected: $reason';
+    }
+    return reason;
+  }
+
+  test('private bus guard requires declared canonical socket paths', () {
+    const directory = '/tmp/wakelock-test';
+    const address = 'unix:path=$directory/bus';
+    const aliases = {
+      '$directory/link': '/run/user/1000/bus',
+      '$directory/../bus': '/tmp/bus',
+      '/tmp/alias': '/run/user/1000',
+      '/tmp/alias/bus': '/run/user/1000/bus',
+    };
+    String resolvePath(String path) => aliases[path] ?? path;
+    for (final (bus, root, allowed) in [
+      (address, directory, true),
+      ('$address,guid=0123456789abcdef0123456789abcdef', directory, true),
+      ('unix:path=/cache/test/bus', '/cache/test', true),
+      (address, '', false),
+      (address, '/', false),
+      ('unix:path=/run/user/1000/bus', '/run/user/1000', false),
+      ('unix:path=%2frun%2fuser%2f1000%2fbus', '/run/user/1000', false),
+      ('unix:path=$directory/link', directory, false),
+      ('unix:path=$directory/../bus', directory, false),
+      ('unix:path=/tmp/alias/bus', '/tmp/alias', false),
+      ('unix:path=$directory-other/bus', directory, false),
+      ('$address;unix:path=/run/user/1000/bus', directory, false),
+      ('$address,path=/run/user/1000/bus', directory, false),
+      ('$address,abstract=bus', directory, false),
+      ('tcp:host=localhost,port=1234', directory, false),
+    ]) {
+      final environment = {
+        'DBUS_SESSION_BUS_ADDRESS': bus,
+        'EASYTIMER_PRIVATE_DBUS': bus,
+        'EASYTIMER_TEST_SOCKET_DIR': root,
+      };
+      expect(
+        _privateBusSkipReason(environment, resolvePath),
+        allowed ? isNull : isNotNull,
+        reason: '$bus in $root',
+      );
+      if (allowed) {
+        environment.remove('EASYTIMER_PRIVATE_DBUS');
+        expect(_privateBusSkipReason(environment, resolvePath), isNotNull);
+        environment['EASYTIMER_PRIVATE_DBUS'] = 'mismatch';
+        expect(_privateBusSkipReason(environment, resolvePath), isNotNull);
+      }
+    }
+  });
 
   test(
     'real Linux plugin uses portal idle inhibition and closes every handle',
     () async {
+      expect(privateBusSkipReason(), isNull);
       final service = DBusClient.session();
       final client = DBusClient.session();
       final portal = _Portal();
@@ -145,6 +233,6 @@ void main() {
         await service.close();
       }
     },
-    skip: isolated ? false : 'Requires EASYTIMER_PRIVATE_DBUS equal to the private bus address in /tmp or ~/.cache/easytimer-qa/tmp.',
+    skip: privateBusSkipReason() ?? false,
   );
 }

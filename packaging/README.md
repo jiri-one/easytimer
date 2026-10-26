@@ -37,11 +37,28 @@ flutter analyze
 flutter test --concurrency=4 --no-pub
 flutter test --concurrency=4 --no-pub --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
 flutter test --concurrency=4 --no-pub --wasm --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
-dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart'
+(
+  socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/easytimer-dbus.XXXXXX") || exit
+  socket_dir=$(cd "$socket_dir" && pwd -P) || exit
+  trap 'rm -rf "$socket_dir"' EXIT
+  dbus-daemon --session --address="unix:path=$socket_dir/bus" \
+    --fork --print-pid=3 3>"$socket_dir/pid" || exit
+  trap 'kill "$(cat "$socket_dir/pid")"; rm -rf "$socket_dir"' EXIT
+  DBUS_SESSION_BUS_ADDRESS="unix:path=$socket_dir/bus" \
+  EASYTIMER_PRIVATE_DBUS="unix:path=$socket_dir/bus" \
+  EASYTIMER_TEST_SOCKET_DIR="$socket_dir" \
+    flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart
+)
 ./tool/build_web.sh
 flutter build linux --release
 flutter build apk --release
 ```
+
+The real Linux portal test reports a skip unless `EASYTIMER_PRIVATE_DBUS` exactly
+matches `DBUS_SESSION_BUS_ADDRESS` and `EASYTIMER_TEST_SOCKET_DIR` declares the
+existing test-owned socket directory. The directory and socket must use canonical
+paths without symlinks; sockets under `/run/user/` are rejected. The private-bus
+command above creates and cleans up its own directory under `${TMPDIR:-/tmp}`.
 
 After changing the branding, run `./branding/generate.sh` from the repository
 root and inspect the generated files. The generator needs `rsvg-convert` from
@@ -212,7 +229,7 @@ not the deployment target.
 
 ## Flatpak and Flathub
 
-The manifest follows EasyDict: Freedesktop **26.08**, **llvm22** and Flutter
+The manifest uses Freedesktop **26.08**, **llvm22** and Flutter
 **3.47.7**. `flatpak-flutter` prefetches and pins the Flutter SDK, pub packages and
 other sources so that the actual build runs without network access. The app has
 Wayland, fallback X11, IPC, DRI and PulseAudio access; it has no network access.
@@ -266,8 +283,8 @@ Before a Flathub release:
    within one week. Future updates go to that app repository.
 4. In the Flathub Developer Portal, select the app and Verification. Serve its
    exact verification token over HTTPS at
-   `https://jiri.one/.well-known/org.flathub.VerifiedApps.txt`. Preserve any EasyDict
-   token already there and add EasyTimer's token on its own line. The domain is
+   `https://jiri.one/.well-known/org.flathub.VerifiedApps.txt`. Preserve any existing
+   domain-verification tokens and add EasyTimer's token on its own line. The domain is
    `jiri.one`, derived from the app ID. Flathub also supports a TXT record at
    `_flathub.jiri.one`; follow the token instructions in the portal. See
    [Flathub verification](https://docs.flathub.org/docs/for-app-authors/verification).

@@ -26,7 +26,18 @@ jobs:
       - run: flutter test --concurrency=4
       - run: flutter test --concurrency=4 --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
       - run: flutter test --concurrency=4 --wasm --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
-      - run: dbus-run-session -- sh -c "EASYTIMER_PRIVATE_DBUS=\"\$DBUS_SESSION_BUS_ADDRESS\" flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart"
+      - name: Test the Linux idle-inhibition portal on a private bus
+        run: |
+          socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/easytimer-dbus.XXXXXX")
+          socket_dir=$(cd "$socket_dir" && pwd -P)
+          trap 'rm -rf "$socket_dir"' EXIT
+          dbus-daemon --session --address="unix:path=$socket_dir/bus" \
+            --fork --print-pid=3 3>"$socket_dir/pid"
+          trap 'kill "$(cat "$socket_dir/pid")"; rm -rf "$socket_dir"' EXIT
+          DBUS_SESSION_BUS_ADDRESS="unix:path=$socket_dir/bus" \
+          EASYTIMER_PRIVATE_DBUS="unix:path=$socket_dir/bus" \
+          EASYTIMER_TEST_SOCKET_DIR="$socket_dir" \
+            flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart
 
   app:
     name: Web app
