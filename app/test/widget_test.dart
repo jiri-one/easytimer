@@ -255,31 +255,35 @@ void main() {
     'volume drags and keyboard adjustment remain immediate and accessible',
     (tester) async {
       final semantics = tester.ensureSemantics();
-      addTearDown(semantics.dispose);
-      await mount(tester);
-      controller.start(const WorkoutOptions());
-      await tester.pump();
-      final slider = find.byType(VolumeControl);
-      final bounds = tester.getRect(slider);
-      final drag = await tester.startGesture(
-        Offset(bounds.center.dx, bounds.bottom - 16),
-      );
-      await drag.moveTo(Offset(bounds.center.dx, bounds.top + 16));
-      await drag.up();
-      await tester.pump();
-      expect(controller.volume, 1);
-      final paintedSlider = find.descendant(
-        of: slider,
-        matching: find.byType(CustomPaint),
-      );
-      Focus.of(tester.element(paintedSlider)).requestFocus();
-      await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pump();
-      expect(controller.volume, .95);
-      final node = tester.getSemantics(find.bySemanticsLabel('Volume'));
-      expect(node.getSemanticsData().label, 'Volume');
-      expect(node.getSemanticsData().value, '95%');
+
+      try {
+        await mount(tester);
+        controller.start(const WorkoutOptions());
+        await tester.pump();
+        final slider = find.byType(VolumeControl);
+        final bounds = tester.getRect(slider);
+        final drag = await tester.startGesture(
+          Offset(bounds.center.dx, bounds.bottom - 16),
+        );
+        await drag.moveTo(Offset(bounds.center.dx, bounds.top + 16));
+        await drag.up();
+        await tester.pump();
+        expect(controller.volume, 1);
+        final paintedSlider = find.descendant(
+          of: slider,
+          matching: find.byType(CustomPaint),
+        );
+        Focus.of(tester.element(paintedSlider)).requestFocus();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(controller.volume, .95);
+        final node = tester.getSemantics(find.bySemanticsLabel('Volume'));
+        expect(node.getSemanticsData().label, 'Volume');
+        expect(node.getSemanticsData().value, '95%');
+      } finally {
+        semantics.dispose();
+      }
     },
   );
 
