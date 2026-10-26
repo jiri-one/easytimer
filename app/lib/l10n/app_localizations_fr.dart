@@ -40,9 +40,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String get stop => 'Arrêt';
 
   @override
-  String get settings => 'Configuration';
-
-  @override
   String get decreaseActiveTime => 'Diminuer Temps Effort';
 
   @override

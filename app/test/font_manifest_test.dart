@@ -50,9 +50,13 @@ void main() {
       'DroidSansMono-Apache-2.0.txt',
       'MaterialIcons-Apache-2.0.txt',
       'IntervalTimer-MIT.txt',
+      'NoSleep-MIT.txt',
     ]) {
       final text = await rootBundle.loadString('assets/licenses/$name');
       expect(text.length, greaterThan(1000));
+      if (name == 'NoSleep-MIT.txt') {
+        expect(text, contains('Copyright (c) Rich Tibbett'));
+      }
     }
   });
 

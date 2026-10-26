@@ -32,7 +32,8 @@ for desktop builds. From `app/`:
 flutter pub get --enforce-lockfile
 flutter analyze
 flutter test --concurrency=4 --no-pub
-flutter test --concurrency=4 --no-pub --platform chrome test/web_platform_test.dart
+flutter test --concurrency=4 --no-pub --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
+flutter test --concurrency=4 --no-pub --wasm --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
 dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart'
 ./tool/build_web.sh
 ./tool/build_web.sh --wasm
@@ -69,16 +70,16 @@ flutter test --concurrency=4 test/golden_test.dart --update-goldens
 `app/lib/timer_engine.dart` derives the current phase, set, display and sound
 boundaries from a monotonic clock. Android and Linux read `CLOCK_BOOTTIME`
 through FFI, including suspend; the web uses `performance.now()`. Late callbacks
-do not extend a phase or replay expired alarms. Timer text updates on displayed
+do not extend a phase; cues already stale when noticed are skipped. Timer text updates on displayed
 second or state changes, with a separate volume subscription.
 
 `workout_controller.dart` connects the engine to preferences and the platform
 backends. Timing, cue policy and playback coordination are Dart. The finish WAV's
 PCM samples are tripled at load time so the three hits play as one continuous
-buffer. Native playback uses one `audioplayers` BytesSource per cue kind; Linux
-reuses stable `audio/alarm.wav` and `audio/end.wav` files in the application's
-cache directory, updating them only when their contents change. The original
-bundled WAV files are unchanged. The web backend decodes the same buffers into
+buffer. Native playback preloads one `audioplayers` player per cue kind and reuses
+its source with seek and resume. Linux reuses stable `audio/alarm.wav` and `audio/end.wav` files in the application's
+cache directory. Files are published atomically and recreated after eviction.
+The original bundled WAV files are unchanged. The web backend decodes the same buffers into
 Web Audio and uses a GainNode, scheduling five minutes ahead and topping up on
 ticks and visibility changes. It rebases future
 audio after context interruption.
@@ -88,9 +89,17 @@ once. Successful cues gate the next alarm by planned time, so delivery jitter
 cannot drop a three-second rest cue. Pause, Stop and a new plan cancel queued
 sounds and reset that guard. Volume changes apply immediately; gain is the square
 of the slider fraction, matching the original app. Volume saves after a 250 ms
-debounce; interval settings save on each edit and on Start. Only the
-`volumePercent` preference is read; older fractional `volume` values are not
+debounce; interval settings save serialized snapshots on each edit and on Start.
+Malformed Linux preference files are preserved as `.corrupt` backups before retrying;
+unavailable storage is retried on later saves. Only the `volumePercent` preference is read; older fractional `volume` values are not
 migrated.
+
+Native alarm eligibility is checked when a cue becomes due. Once accepted,
+a cue plays even if preparation or playback starts late; plugin start latency
+is not bounded. A start that returns after cancellation is stopped immediately,
+but a short stale sound can still occur. On Linux,
+`audioplayers` can wait indefinitely for a GStreamer state change. A stalled
+pipeline can block Stop and the window; Dart cannot interrupt that native wait.
 
 As in the Android original, there is no foreground service or notification in
 this version. A suspended device, terminated process or discarded browser tab
@@ -106,5 +115,6 @@ Nienow and contributors, under the MIT licence. Volume labels come from Jiří
 Němec's MIT-licensed fork. The generic monospace typography is supplied by
 bundled Droid Sans Mono, © 2007 Google Corporation, under the Apache License
 2.0. The speaker paths are Google Material Design Icons under Apache-2.0.
+The web wake-lock plugin includes NoSleep.js, © Rich Tibbett, under MIT.
 Fonts are never fetched at runtime. Full attribution, pinned sources and
 third-party licence texts are listed in [NOTICE](NOTICE).

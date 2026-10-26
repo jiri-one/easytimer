@@ -30,7 +30,6 @@ class BootClock implements MonotonicClock {
 
   @override
   int get nowMs {
-    // Synchronous reads share one buffer for the isolate's lifetime.
     if (_read(7, _time) != 0) {
       throw StateError('CLOCK_BOOTTIME is unavailable');
     }

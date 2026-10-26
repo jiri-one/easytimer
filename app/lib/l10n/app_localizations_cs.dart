@@ -40,9 +40,6 @@ class AppLocalizationsCs extends AppLocalizations {
   String get stop => 'Stop';
 
   @override
-  String get settings => 'Nastavení';
-
-  @override
   String get decreaseActiveTime => 'Zkrácení času aktivity';
 
   @override

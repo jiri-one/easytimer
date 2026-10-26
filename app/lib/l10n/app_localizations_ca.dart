@@ -40,9 +40,6 @@ class AppLocalizationsCa extends AppLocalizations {
   String get stop => 'Acabar';
 
   @override
-  String get settings => 'Configuració';
-
-  @override
   String get decreaseActiveTime => 'Abaixa Temps de Esforç';
 
   @override

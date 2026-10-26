@@ -35,7 +35,8 @@ cd app
 flutter pub get --enforce-lockfile
 flutter analyze
 flutter test --concurrency=4 --no-pub
-flutter test --concurrency=4 --no-pub --platform chrome test/web_platform_test.dart
+flutter test --concurrency=4 --no-pub --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
+flutter test --concurrency=4 --no-pub --wasm --platform chrome --dart-define=WEB_PLUGIN_TESTS=true test/web_platform_test.dart test/web_wake_lock_test.dart
 dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --concurrency=4 --no-pub test/wakelock_linux_test.dart'
 ./tool/build_web.sh
 flutter build linux --release
@@ -54,8 +55,9 @@ regenerating them.
 Native audio uses `audioplayers` without requesting audio focus. The finish WAV
 is loaded with its PCM samples repeated three times and played as one BytesSource,
 avoiding gaps between separately started hits. Linux stores each cue in a stable
-file under the app's cache directory and reuses it across launches. Linux links
-GStreamer core, app and audio libraries. Build dependencies on Debian/Ubuntu are
+file under the app's cache directory and reuses it across launches. Cache files
+are published atomically and recreated after eviction. The Linux plugin checks
+GStreamer core, app and audio pkg-config modules. Build dependencies on Debian/Ubuntu are
 `libgstreamer1.0-dev` and `libgstreamer-plugins-base1.0-dev`, alongside Flutter's
 standard GTK development tools. Runtime dependencies include GStreamer's base
 and good plugins (`gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good`) for

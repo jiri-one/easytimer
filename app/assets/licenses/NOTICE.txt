@@ -89,6 +89,19 @@ implementations and transitive dependencies of these plugins:
     https://github.com/fluttercommunity/wakelock_plus
     Screen wake lock; Linux uses the desktop Inhibit portal.
 
+NoSleep.js 0.12.0
+----------------
+Copyright (c) Rich Tibbett
+License: MIT
+Full license: app/assets/licenses/NoSleep-MIT.txt
+Upstream: https://github.com/richtr/NoSleep.js
+Pinned upstream license:
+https://raw.githubusercontent.com/richtr/NoSleep.js/v0.12.0/LICENSE
+
+wakelock_plus vendors a NoSleep.js derivative in its web asset no_sleep.js.
+The component is used only by the web build; its upstream MIT notice is retained
+in the common licence assets alongside the plugin's generated BSD notice.
+
 Package versions and source checksums are recorded in app/pubspec.lock.
 The custom licence texts and this notice are shipped once from
 app/assets/licenses/; packaging retains those bundled copies.

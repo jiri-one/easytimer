@@ -40,9 +40,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get stop => 'Stop';
 
   @override
-  String get settings => 'Settings';
-
-  @override
   String get decreaseActiveTime => 'Decrease Active Time';
 
   @override
