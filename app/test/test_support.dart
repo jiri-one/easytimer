@@ -71,7 +71,7 @@ Future<WorkoutController> createTestController(
   SharedPreferences.setMockInitialValues(preferences);
   final recording = platform ?? RecordingTimerPlatform();
   final controller = WorkoutController(
-    await TimerSettings.load(),
+    await TimerSettings.load(loader: SharedPreferences.getInstance),
     recording,
     clock: clock ?? FakeClock(),
     keepAwake: recording.keepAwake,

@@ -80,6 +80,43 @@ void main() {
       await directory.delete(recursive: true);
     });
 
+    test('a missing store stays absent until values are saved', () async {
+      final settings = await TimerSettings.load();
+      expect(settings.preferences, isNotNull);
+      expect(settings.options.active, 45);
+      expect(await file.exists(), isFalse);
+      expect(await backups(), isEmpty);
+      await settings.saveVolume(40);
+      expect((await reload()).volumePercent, 40);
+      expect(await backups(), isEmpty);
+    });
+
+    test('a store read failure is not classified as data corruption', () async {
+      final blocked = await Directory(file.path).create();
+      final settings = await TimerSettings.load();
+      expect(settings.preferences, isNull);
+      expect(await blocked.exists(), isTrue);
+      expect(await backups(), isEmpty);
+      await settings.saveOptions(
+        const WorkoutOptions(active: 55, rest: 25, sets: 3),
+      );
+      expect(await blocked.exists(), isTrue);
+      expect(await backups(), isEmpty);
+      await blocked.delete();
+      await settings.saveVolume(40);
+      final next = await reload();
+      expect(
+        (
+          next.options.active,
+          next.options.rest,
+          next.options.sets,
+          next.volumePercent,
+        ),
+        (55, 25, 3, 40),
+      );
+      expect(await backups(), isEmpty);
+    });
+
     test(
       'malformed JSON is backed up and later edits survive a fresh plugin',
       () async {
@@ -97,7 +134,7 @@ void main() {
           ),
           (45, 15, 100),
         );
-        expect(await file.exists(), isFalse);
+        expect(jsonDecode(await file.readAsString()), isEmpty);
         final savedBackups = await backups();
         expect(savedBackups, hasLength(2));
         final recovered = savedBackups.singleWhere(
@@ -130,7 +167,7 @@ void main() {
         const raw =
             '{"flutter.activeTime":"bad","flutter.restTime":25.0,'
             '"flutter.sets":3,"flutter.volumePercent":40.0,'
-            '"unrelated":{"enabled":true},"flutter.extra":["keep"]}';
+            '"unrelated":true,"flutter.extra":["keep"]}';
         await file.writeAsString(raw);
         final settings = await TimerSettings.load();
         expect(settings.preferences, isNotNull);
@@ -156,6 +193,110 @@ void main() {
         expect(stored['flutter.restTime'], isA<double>());
       },
     );
+
+    for (final raw in [
+      '{"flutter.activeTime":null,"flutter.restTime":25}',
+      '{"other":null,"flutter.restTime":25}',
+    ]) {
+      test('real Linux plugin recovers unsupported null value: $raw', () async {
+        await file.writeAsString(raw);
+        final settings = await TimerSettings.load();
+        expect(settings.preferences, isNotNull);
+        expect((settings.options.active, settings.options.rest), (45, 25));
+        expect(jsonDecode(await file.readAsString()), {'flutter.restTime': 25});
+        final backup = (await backups()).single;
+        expect(await backup.readAsString(), raw);
+
+        await settings.saveOptions(
+          const WorkoutOptions(active: 55, rest: 30, sets: 4),
+        );
+        await settings.saveVolume(40);
+        final next = await reload();
+        expect(
+          (
+            next.options.active,
+            next.options.rest,
+            next.options.sets,
+            next.volumePercent,
+          ),
+          (55, 30, 4, 40),
+        );
+        expect(await backup.readAsString(), raw);
+        expect(await backups(), hasLength(1));
+      });
+    }
+
+    test(
+      'repair keeps every supported type and drops only invalid entries',
+      () async {
+        final valid = <String, Object>{
+          'flutter.activeTime': 'bad',
+          'flutter.restTime': 25.0,
+          'flutter.sets': 3,
+          'flutter.volumePercent': 40.0,
+          'boolean': true,
+          'integer': 123,
+          'double': 1.25,
+          'string': 'keep',
+          'list': ['keep', 'all'],
+          'flutter.empty': <String>[],
+          'flutter.extra': ['keep', 'all'],
+        };
+        final raw = jsonEncode({
+          ...valid,
+          'null': null,
+          'object': {'enabled': true},
+          'mixed': ['keep', 1],
+          'nested': [<String>[]],
+          'nullable': ['keep', null],
+        });
+        await file.writeAsString(raw);
+        final settings = await TimerSettings.load();
+        expect(settings.preferences, isNotNull);
+        expect(jsonDecode(await file.readAsString()), valid);
+        expect(settings.options.rest, 25);
+        expect(settings.preferences!.getStringList('empty'), isEmpty);
+        expect(settings.preferences!.getStringList('extra'), ['keep', 'all']);
+        final backup = (await backups()).single;
+        expect(await backup.readAsString(), raw);
+
+        await settings.saveVolume(50);
+        final next = await reload();
+        expect(next.volumePercent, 50);
+        expect(next.options.rest, 25);
+        final expected = {...valid, 'flutter.volumePercent': 50};
+        expect(jsonDecode(await file.readAsString()), expected);
+        expect(await backup.readAsString(), raw);
+        expect(await backups(), hasLength(1));
+      },
+    );
+
+    for (final raw in ['null', '[]', '"not an object"', '', '{"bad":1e999}']) {
+      test('invalid store shape or value is repaired: $raw', () async {
+        await file.writeAsString(raw);
+        final settings = await TimerSettings.load();
+        expect(settings.preferences, isNotNull);
+        expect(jsonDecode(await file.readAsString()), isEmpty);
+        final backup = (await backups()).single;
+        expect(await backup.readAsString(), raw);
+        await settings.saveVolume(40);
+        expect((await reload()).volumePercent, 40);
+        expect(await backup.readAsString(), raw);
+      });
+    }
+
+    test('invalid UTF-8 is preserved as an untouched byte backup', () async {
+      const bytes = [0xff, 0xfe, 0x7b];
+      await file.writeAsBytes(bytes);
+      final settings = await TimerSettings.load();
+      expect(settings.preferences, isNotNull);
+      expect(jsonDecode(await file.readAsString()), isEmpty);
+      final backup = (await backups()).single;
+      expect(await backup.readAsBytes(), bytes);
+      await settings.saveVolume(40);
+      expect((await reload()).volumePercent, 40);
+      expect(await backup.readAsBytes(), bytes);
+    });
 
     test(
       'startup access failures leave the file intact and retry pending edits',

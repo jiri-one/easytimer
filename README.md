@@ -102,8 +102,9 @@ cannot drop a three-second rest cue. Pause, Stop and a new plan cancel queued
 sounds and reset that guard. Volume changes apply immediately; gain is the square
 of the slider fraction, matching the original app. Volume saves after a 250 ms
 debounce; interval settings save serialized snapshots on each edit and on Start.
-Malformed Linux preference files are preserved as `.corrupt` backups before retrying;
-unavailable storage is retried on later saves. Only the `volumePercent` preference is read; older fractional `volume` values are not
+Linux validates its preference file before loading it. Invalid data is preserved
+untouched in a `.corrupt` backup, and valid entries are kept in the repaired store.
+Unavailable storage is retried on later saves. Only the `volumePercent` preference is read; older fractional `volume` values are not
 migrated.
 
 Native alarm eligibility is checked when a cue becomes due. Once accepted,
