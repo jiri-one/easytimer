@@ -5,6 +5,9 @@ rewrite of [Interval Timer](https://github.com/randombits-dev/interval-timer), w
 large controls and high-contrast light/dark themes suited to e-ink screens.
 Text is black on white or white on black. Green ACTIVE and red REST labels
 have at least 7:1 contrast; the coloured control-button fills are preserved.
+Text and controls scale with the window for reading from a distance. Wide timer
+windows put the countdown beside a vertical control column; fullscreen and
+maximised windows use the available space without a fixed size cap.
 
 Set **Active**, **Rest** and **Sets**, then press Start. Preparation lasts five
 seconds. An empty or zero set count repeats indefinitely. The last settings and
@@ -56,7 +59,9 @@ proprietary audio SDKs or Play services are used. See
 [packaging instructions](packaging/README.md) for releases and installation.
 
 The committed golden tests load the bundled fonts and cover 824×1648 physical
-pixels at DPR 1.5, 1.875 and 2.5, 420×760 and 640×400 desktop windows, and a 1440×900 browser.
+pixels at DPR 1.5, 1.875 and 2.5, 420×760 and 640×400 desktop windows, a
+1440×900 browser, and 1920×1080 / 3200×1800 fullscreen layouts at DPR 1 and 2.
+Long French labels and a three-digit countdown are covered too.
 Run the UI, golden and bundled font/licence checks together with
 `flutter test --concurrency=4 --no-pub test/widget_test.dart test/golden_test.dart test/font_manifest_test.dart`.
 Generated localization bindings are tracked, as in EasyDict. Regenerate them

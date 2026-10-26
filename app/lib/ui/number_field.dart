@@ -11,16 +11,18 @@ class NumberField extends StatefulWidget {
     super.key,
     required this.label,
     required this.controller,
-    required this.scale,
+    required this.fontSize,
     required this.onChanged,
     required this.onSubmitted,
+    this.padding = EdgeInsets.zero,
     this.hint,
     this.semanticHint,
   });
 
   final String label;
   final TextEditingController controller;
-  final double scale;
+  final double fontSize;
+  final EdgeInsetsGeometry padding;
   final VoidCallback onChanged;
   final VoidCallback onSubmitted;
   final String? hint;
@@ -45,7 +47,7 @@ class _NumberFieldState extends State<NumberField> {
   Widget build(BuildContext context) {
     final colors = AppPalette.of(context);
     final foreground = colors.foreground;
-    final style = NativeText.style(18 * widget.scale, foreground, false);
+    final style = NativeText.style(widget.fontSize, foreground, false);
     return ListenableBuilder(
       listenable: Listenable.merge([_focus, widget.controller]),
       builder: (context, _) => Semantics(
@@ -61,10 +63,7 @@ class _NumberFieldState extends State<NumberField> {
                 border: Border(bottom: BorderSide(color: foreground)),
               ),
               child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: nativeDimension(context, 4, widget.scale),
-                  vertical: nativeDimension(context, 8, widget.scale),
-                ),
+                padding: widget.padding,
                 child: Center(
                   child: Stack(
                     alignment: Alignment.center,
@@ -76,6 +75,8 @@ class _NumberFieldState extends State<NumberField> {
                             style: style.copyWith(
                               color: nativeTextColor(context),
                             ),
+                            maxLines: 1,
+                            softWrap: false,
                           ),
                         ),
                       // Centered single-line text hits Flutter's vertical-caret assertion.
@@ -152,24 +153,26 @@ class NumberStepButton extends StatelessWidget {
     super.key,
     required this.label,
     required this.add,
-    required this.scale,
+    required this.size,
+    required this.glyphSize,
     required this.onPressed,
   });
 
   final String label;
   final bool add;
-  final double scale;
+  final double size;
+  final double glyphSize;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
-    dimension: nativeDimension(context, 56, scale),
+    dimension: size,
     child: StaticButton(
       label: label,
       onPressed: onPressed,
       child: Center(
         child: CustomPaint(
-          size: Size.square(nativeDimension(context, 24, scale)),
+          size: Size.square(glyphSize),
           painter: _StepPainter(add, nativeTextColor(context)),
         ),
       ),

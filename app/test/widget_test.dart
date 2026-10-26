@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:easytimer/app.dart';
@@ -466,11 +465,15 @@ void main() {
           );
         }
       }
+      final inset = 16 * tester.widget<VolumeControl>(slider).scale;
       final drag = await tester.startGesture(
-        Offset(bounds.center.dx, bounds.bottom - 16),
+        Offset(bounds.center.dx, bounds.bottom - inset),
       );
       await drag.moveTo(
-        Offset(bounds.center.dx, bounds.top + 16 + .63 * (bounds.height - 32)),
+        Offset(
+          bounds.center.dx,
+          bounds.top + inset + .63 * (bounds.height - 2 * inset),
+        ),
       );
       await drag.up();
       await staticFrame(tester);
@@ -582,65 +585,155 @@ void main() {
     expect(platform.awake, [true, false]);
   });
 
-  timerTest('native sizing keeps text, proportions and reachable controls', (
+  timerTest('settings values and controls scale for distant reading', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(618, 1125);
-    tester.view.devicePixelRatio = 1.5;
-    await mount(tester);
-    final label = tester.widget<Text>(find.text('Active'));
-    final scale = tester
-        .widget<NumberField>(find.byType(NumberField).first)
-        .scale;
-    expect(label.style!.fontSize, 20 * scale);
-    expect(label.style!.fontWeight, FontWeight.bold);
-    expect(label.style!.color, Colors.black);
-    final minus = tester.getRect(find.byType(NumberStepButton).at(0));
-    final plus = tester.getRect(find.byType(NumberStepButton).at(1));
-    expect((plus.right - minus.left) / 412, closeTo(.8, .005));
-    for (final element in [
-      ...find.byType(NumberStepButton).evaluate(),
-      ...find.byType(NumberField).evaluate(),
+    for (final size in [
+      const Size(412, 750),
+      const Size(420, 760),
+      const Size(1920, 1080),
+      const Size(3200, 1800),
     ]) {
-      final size = tester.getSize(find.byWidget(element.widget));
-      expect(size.width, greaterThanOrEqualTo(48));
-      expect(size.height, greaterThanOrEqualTo(48));
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      await mount(tester);
+      final label = tester.widget<Text>(find.text('Active'));
+      final value = tester.widget<EditableText>(
+        find.byType(EditableText).first,
+      );
+      expect(
+        value.style.fontSize!,
+        greaterThanOrEqualTo(1.5 * label.style!.fontSize!),
+      );
+      expect(label.style!.fontWeight, FontWeight.bold);
+      expect(label.style!.color, Colors.black);
+      for (final target in find.byType(NumberStepButton).evaluate()) {
+        final bounds = tester.getSize(find.byWidget(target.widget));
+        expect(bounds.width, greaterThanOrEqualTo(64));
+        expect(bounds.height, greaterThanOrEqualTo(64));
+      }
+      expect(tester.takeException(), isNull);
     }
-    controller.start(const WorkoutOptions());
-    controller.togglePause();
+  });
+
+  timerTest('countdown size stays fixed through digit boundaries and pause', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
-    for (final height in [570.0, 400.0]) {
-      tester.view.physicalSize = Size(640, height);
+    tester.view.physicalSize = const Size(420, 760);
+    controller.start(const WorkoutOptions(active: 120));
+    await mount(tester);
+    double font(String text) =>
+        tester.widget<Text>(find.text(text)).style!.fontSize!;
+    clock.nowMs = 5000;
+    controller.refresh();
+    await tester.pump();
+    final size = font('120');
+    final digitBounds = tester.getRect(find.text('120'));
+    for (final (time, seconds) in [(115000, '10'), (116000, '9')]) {
+      clock.nowMs = time;
+      controller.refresh();
       await tester.pump();
-      final top = tester.getRect(find.byType(NativeText).first).top;
-      final row = tester.getRect(find.byType(CircleControl).first);
-      final expected = math.max(
-        64.0,
-        math.min(200.0, math.min((640 - 126) / 2, height - (row.top - top))),
+      expect(font(seconds), size);
+      expect(tester.getRect(find.text(seconds)), digitBounds);
+    }
+    controller.togglePause();
+    await tester.pump();
+    clock.nowMs = 216000;
+    controller.togglePause();
+    await tester.pump();
+    expect(font('9'), size);
+    expect(tester.getRect(find.text('9')), digitBounds);
+    await staticFrame(tester);
+  });
+
+  timerTest('fullscreen timer uses huge digits beside stacked controls', (
+    tester,
+  ) async {
+    controller.start(const WorkoutOptions());
+    clock.nowMs = 5000;
+    controller.refresh();
+    double? previousFont;
+    for (final size in [const Size(1920, 1080), const Size(3200, 1800)]) {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      await mount(tester);
+      final digits = tester.widget<Text>(find.text('45'));
+      final font = digits.style!.fontSize!;
+      expect(font * 1462 / 2048, greaterThanOrEqualTo(size.height * .5));
+      if (previousFont != null) expect(font, greaterThan(previousFont));
+      previousFont = font;
+      final countdown = tester.getRect(find.text('45'));
+      final pause = tester.getRect(find.byType(CircleControl).first);
+      final stop = tester.getRect(find.byType(CircleControl).last);
+      expect(pause.left, greaterThan(countdown.right));
+      expect(pause.center.dx, closeTo(stop.center.dx, 1));
+      expect(pause.bottom, lessThanOrEqualTo(stop.top));
+      expect(stop.bottom, lessThanOrEqualTo(size.height));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  timerTest('the longest phase label fits at one size in every locale', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 2.5;
+    tester.view.physicalSize = const Size(824, 1648);
+    for (final locale in AppLocalizations.supportedLocales) {
+      clock.nowMs = 0;
+      controller.start(const WorkoutOptions());
+      await tester.pumpWidget(
+        EasyTimerApp(controller: controller, locale: locale),
       );
-      final buttons = tester.widgetList<CircleControl>(
-        find.byType(CircleControl),
-      );
-      expect(buttons.first.size, closeTo(expected.roundToDouble(), 1));
-      expect(buttons.last.size, buttons.first.size);
-      for (final (text, size) in [
-        ('SET', 24.0),
-        ('1', 64.0),
-        ('PREPARE', 65.0),
-        ('5', 150.0),
-      ]) {
-        final style = tester.widget<Text>(find.text(text)).style!;
-        expect(style.fontSize, size);
-        expect(style.fontFamily, 'Roboto');
+      double? phaseSize;
+      for (final time in [0, 5000, 50000]) {
+        clock.nowMs = time;
+        controller.refresh();
+        await tester.pump();
+        final context = tester.element(find.byType(TimerScreen));
+        final strings = AppLocalizations.of(context);
+        final label = switch (controller.display.value.phase) {
+          TimerPhase.prepare => strings.prepareTimeLabel,
+          TimerPhase.active => strings.activeTimeLabel,
+          TimerPhase.rest => strings.restTimeLabel,
+        };
+        final target = find.text(label.toUpperCase());
+        final text = tester.widget<Text>(target);
+        phaseSize ??= text.style!.fontSize;
+        expect(text.style!.fontSize, phaseSize);
+        final painter = TextPainter(
+          text: TextSpan(text: text.data, style: text.style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+        expect(
+          painter.width,
+          lessThanOrEqualTo(tester.getSize(target).width + 1),
+        );
+        painter.dispose();
+        expect(tester.takeException(), isNull);
       }
-      if (height == 400) {
-        expect(buttons.first.size, 64);
-        await tester.drag(find.byType(TimerScreen), const Offset(0, -400));
-        await staticFrame(tester);
-        expect(find.bySemanticsLabel('Stop').hitTestable(), findsOneWidget);
-      } else {
-        expect(row.bottom, lessThanOrEqualTo(height + .5));
-      }
+    }
+  });
+
+  timerTest('short windows keep every control reachable without animation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 400);
+    tester.view.devicePixelRatio = 1;
+    await mount(tester);
+    await tester.ensureVisible(find.bySemanticsLabel('Start'));
+    await staticFrame(tester);
+    expect(find.bySemanticsLabel('Start').hitTestable(), findsOneWidget);
+    controller.start(const WorkoutOptions());
+    await tester.pump();
+    await tester.ensureVisible(find.bySemanticsLabel('Stop'));
+    await staticFrame(tester);
+    expect(find.bySemanticsLabel('Stop').hitTestable(), findsOneWidget);
+    for (final button in tester.widgetList<CircleControl>(
+      find.byType(CircleControl),
+    )) {
+      expect(button.size, greaterThanOrEqualTo(64));
     }
   });
 }

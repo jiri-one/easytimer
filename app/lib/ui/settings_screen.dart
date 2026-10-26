@@ -68,38 +68,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final strings = AppLocalizations.of(context);
-    return LayoutBuilder(
+    return InstantScrollView(
       builder: (context, constraints) {
-        final screen = MediaQuery.sizeOf(context);
-        final baseHeight =
+        const minimumTarget = 64.0;
+        // Keep the controls readable when the keyboard or a short window leaves
+        // too little height; InstantScrollView makes the remaining groups reachable.
+        final layoutHeight = math.max(constraints.maxHeight, minimumTarget * 5);
+        final columnWidth = math.min(
+          .92 * constraints.maxWidth,
+          1.25 * layoutHeight,
+        );
+        final valueExtent = math.min(.13 * layoutHeight, columnWidth / 5.1);
+        final targetSize = math.max(minimumTarget, 1.25 * valueExtent);
+        final fieldPadding = EdgeInsets.symmetric(
+          horizontal: .05 * valueExtent,
+        );
+        // Fit every possible value before the first frame. Editing or stepping
+        // through 0..9999 must not resize the text or move its neighbouring buttons.
+        final valueFontSize = NativeText.fitSize(
+          context,
+          '9999',
+          maxSize: valueExtent,
+          width: math.max(
+            0,
+            columnWidth - 2 * targetSize - fieldPadding.horizontal - 2,
+          ),
+          height: valueExtent,
+        );
+        final textScaler = MediaQuery.textScalerOf(context);
+        final scaledValueSize = textScaler.scale(valueFontSize);
+        final labelFontSize =
             [
               strings.activeTimeLabel,
               strings.restTimeLabel,
               strings.setsLabel,
             ].fold<double>(
-              0,
-              (height, label) =>
-                  height +
-                  NativeText.measure(
-                    context,
-                    label,
-                    20,
-                    screen.width,
-                    bold: true,
-                  ),
-            ) +
-            56 * 3 +
-            20 * 2 +
-            30 +
-            100;
-        final scale = math
-            .min(.8 * screen.width / 200, .85 * screen.height / baseHeight)
-            .clamp(1.0, 2.5);
-        double dimension(double value) =>
-            nativeDimension(context, value, scale);
-        // Height-limited scaling otherwise narrows the native reference column;
-        // wider rows preserve its proportions without inventing vertical space.
-        final rowWidth = math.min(.8 * constraints.maxWidth, dimension(220));
+              valueFontSize / 1.7,
+              (size, label) => NativeText.fitSize(
+                context,
+                label,
+                maxSize: size,
+                width: columnWidth,
+                height: scaledValueSize / 1.7,
+                bold: true,
+              ),
+            );
+        final rowHeight = math.max(targetSize, 1.4 * scaledValueSize);
+        // The native plus occupies 14/24 of its canvas; this matches the
+        // Droid Sans Mono digit cap height (1462/2048 of the value font size).
+        final glyphSize = 1.22 * scaledValueSize;
+        final minimumGap = .04 * scaledValueSize;
+        final startSize = math.min(
+          columnWidth,
+          math.max(minimumTarget, .18 * layoutHeight),
+        );
+
         Widget field(
           String label,
           TextEditingController controller,
@@ -112,16 +135,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }) => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            NativeText(label, size: 20 * scale, bold: true),
+            NativeText(label, size: labelFontSize, bold: true),
             SizedBox(
-              width: rowWidth,
-              height: dimension(56),
+              width: columnWidth,
+              height: rowHeight,
               child: Row(
                 children: [
                   NumberStepButton(
                     label: less,
                     add: false,
-                    scale: scale,
+                    size: targetSize,
+                    glyphSize: glyphSize,
                     onPressed: subtract,
                   ),
                   Expanded(
@@ -129,7 +153,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       key: ValueKey(label),
                       label: label,
                       controller: controller,
-                      scale: scale,
+                      fontSize: valueFontSize,
+                      padding: fieldPadding,
                       hint: hint,
                       semanticHint: semanticHint,
                       onChanged: _save,
@@ -139,7 +164,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   NumberStepButton(
                     label: more,
                     add: true,
-                    scale: scale,
+                    size: targetSize,
+                    glyphSize: glyphSize,
                     onPressed: add,
                   ),
                 ],
@@ -147,46 +173,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         );
-        return InstantScrollView(
-          builder: (context, _) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              field(
-                strings.activeTimeLabel,
-                _active,
-                strings.decreaseActiveTime,
-                strings.increaseActiveTime,
-                () => _change(_active, _defaults.active, 5, -5),
-                () => _change(_active, _defaults.active, 5, 5),
+        final groups = [
+          field(
+            strings.activeTimeLabel,
+            _active,
+            strings.decreaseActiveTime,
+            strings.increaseActiveTime,
+            () => _change(_active, _defaults.active, 5, -5),
+            () => _change(_active, _defaults.active, 5, 5),
+          ),
+          field(
+            strings.restTimeLabel,
+            _rest,
+            strings.decreaseRestTime,
+            strings.increaseRestTime,
+            () => _change(_rest, _defaults.rest, 0, -5),
+            () => _change(_rest, _defaults.rest, 0, 5),
+          ),
+          field(
+            strings.setsLabel,
+            _sets,
+            strings.decreaseSets,
+            strings.increaseSets,
+            () => _change(_sets, 0, 0, -1, emptyZero: true),
+            () => _change(_sets, 0, 0, 1, emptyZero: true),
+            hint: '∞',
+            semanticHint: strings.unlimited,
+          ),
+          CircleControl(
+            label: strings.start,
+            symbol: ControlSymbol.play,
+            size: startSize,
+            onPressed: _start,
+          ),
+        ];
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: minimumGap / 2),
+              child: SizedBox(
+                width: columnWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    for (final group in groups)
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: minimumGap / 2),
+                        child: group,
+                      ),
+                  ],
+                ),
               ),
-              SizedBox(height: dimension(20)),
-              field(
-                strings.restTimeLabel,
-                _rest,
-                strings.decreaseRestTime,
-                strings.increaseRestTime,
-                () => _change(_rest, _defaults.rest, 0, -5),
-                () => _change(_rest, _defaults.rest, 0, 5),
-              ),
-              SizedBox(height: dimension(20)),
-              field(
-                strings.setsLabel,
-                _sets,
-                strings.decreaseSets,
-                strings.increaseSets,
-                () => _change(_sets, 0, 0, -1, emptyZero: true),
-                () => _change(_sets, 0, 0, 1, emptyZero: true),
-                hint: '∞',
-                semanticHint: strings.unlimited,
-              ),
-              SizedBox(height: dimension(30)),
-              CircleControl(
-                label: strings.start,
-                symbol: ControlSymbol.play,
-                size: dimension(100),
-                onPressed: _start,
-              ),
-            ],
+            ),
           ),
         );
       },

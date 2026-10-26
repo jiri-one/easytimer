@@ -5,11 +5,6 @@ import 'palette.dart';
 Color nativeTextColor(BuildContext context) =>
     AppPalette.of(context).foreground;
 
-double nativeDimension(BuildContext context, double value, [double scale = 1]) {
-  final density = MediaQuery.devicePixelRatioOf(context);
-  return ((value * density).round() * scale).round() / density;
-}
-
 class NativeText extends StatelessWidget {
   const NativeText(
     this.text, {
@@ -24,47 +19,60 @@ class NativeText extends StatelessWidget {
   final Color? color;
   final bool bold;
 
-  // Android TextView includes the font's top/bottom bounds outside its line metrics.
-  static EdgeInsets fontPadding(double size) =>
-      EdgeInsets.only(top: size * 263 / 2048, bottom: size * 55 / 2048);
-
   static TextStyle style(double size, Color color, bool bold) => TextStyle(
     fontFamily: 'Roboto',
     fontSize: size,
     fontWeight: bold ? FontWeight.bold : FontWeight.normal,
     color: color,
-    height: 2400 / 2048,
+    height: 1,
   );
 
-  static double measure(
+  static double fitSize(
     BuildContext context,
-    String text,
-    double size,
-    double width, {
+    String text, {
+    required double maxSize,
+    required double width,
+    double height = double.infinity,
     bool bold = false,
   }) {
-    final scaler = MediaQuery.textScalerOf(context);
-    final direction = Directionality.of(context);
     final painter = TextPainter(
-      text: TextSpan(
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    );
+    bool fits(double size) {
+      painter.text = TextSpan(
         text: text,
         style: style(size, nativeTextColor(context), bold),
-      ),
-      textDirection: direction,
-      textScaler: scaler,
-    )..layout(maxWidth: width);
-    final result = painter.height + fontPadding(scaler.scale(size)).vertical;
+      );
+      painter.layout();
+      return painter.width <= width && painter.height <= height;
+    }
+
+    var lower = 0.0;
+    var upper = maxSize;
+    if (fits(upper)) {
+      lower = upper;
+    } else {
+      for (var i = 0; i < 12; i++) {
+        final middle = (lower + upper) / 2;
+        if (fits(middle)) {
+          lower = middle;
+        } else {
+          upper = middle;
+        }
+      }
+    }
     painter.dispose();
-    return result;
+    return lower;
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: fontPadding(MediaQuery.textScalerOf(context).scale(size)),
-    child: Text(
-      text,
-      textAlign: TextAlign.center,
-      style: style(size, color ?? nativeTextColor(context), bold),
-    ),
+  Widget build(BuildContext context) => Text(
+    text,
+    textAlign: TextAlign.center,
+    maxLines: 1,
+    softWrap: false,
+    style: style(size, color ?? nativeTextColor(context), bold),
   );
 }

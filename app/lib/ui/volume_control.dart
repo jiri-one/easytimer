@@ -11,12 +11,14 @@ class VolumeControl extends StatefulWidget {
     required this.percent,
     required this.onChanged,
     required this.onStep,
+    this.scale = 1,
   });
 
   final String label;
   final int percent;
   final ValueChanged<int> onChanged;
   final ValueChanged<int> onStep;
+  final double scale;
 
   @override
   State<VolumeControl> createState() => _VolumeControlState();
@@ -35,7 +37,9 @@ class _VolumeControlState extends State<VolumeControl> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       void position(Offset local) {
-        final fraction = 1 - (local.dy - 16) / (constraints.maxHeight - 32);
+        final inset = 16 * widget.scale;
+        final fraction =
+            1 - (local.dy - inset) / (constraints.maxHeight - 2 * inset);
         _focus.requestFocus();
         widget.onChanged((fraction * 100).round());
       }
@@ -83,6 +87,7 @@ class _VolumeControlState extends State<VolumeControl> {
                   painter: _VolumePainter(
                     widget.percent / 100,
                     AppPalette.of(context),
+                    widget.scale,
                   ),
                 ),
               ),
@@ -95,43 +100,44 @@ class _VolumeControlState extends State<VolumeControl> {
 }
 
 class _VolumePainter extends CustomPainter {
-  const _VolumePainter(this.value, this.colors);
+  const _VolumePainter(this.value, this.colors, this.scale);
 
   final double value;
   final AppPalette colors;
+  final double scale;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(
       size.width / 2,
-      16 + (1 - value) * (size.height - 32),
+      16 * scale + (1 - value) * (size.height - 32 * scale),
     );
     final track = RRect.fromRectAndRadius(
       Rect.fromLTRB(
-        size.width / 2 - 4,
-        16,
-        size.width / 2 + 4,
-        size.height - 16,
+        size.width / 2 - 4 * scale,
+        16 * scale,
+        size.width / 2 + 4 * scale,
+        size.height - 16 * scale,
       ),
-      const Radius.circular(4),
+      Radius.circular(4 * scale),
     );
     canvas.drawRRect(track, Paint()..color = colors.track);
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(0, center.dy, size.width, size.height));
     canvas.drawRRect(track, Paint()..color = colors.foreground);
     canvas.restore();
-    canvas.drawCircle(center, 16, Paint()..color = colors.background);
+    canvas.drawCircle(center, 16 * scale, Paint()..color = colors.background);
     canvas.drawCircle(
       center,
-      15,
+      15 * scale,
       Paint()
         ..color = colors.foreground
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
+        ..strokeWidth = 2 * scale,
     );
     canvas.save();
-    canvas.translate(center.dx - 10, center.dy - 10);
-    canvas.scale(20 / 24);
+    canvas.translate(center.dx - 10 * scale, center.dy - 10 * scale);
+    canvas.scale(20 * scale / 24);
     canvas.drawPath(
       value == 0 ? _mutedSpeaker : _speaker,
       Paint()..color = colors.foreground,
@@ -141,7 +147,9 @@ class _VolumePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_VolumePainter oldDelegate) =>
-      oldDelegate.value != value || oldDelegate.colors != colors;
+      oldDelegate.value != value ||
+      oldDelegate.colors != colors ||
+      oldDelegate.scale != scale;
 }
 
 final _speaker = Path()

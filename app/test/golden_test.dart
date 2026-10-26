@@ -22,6 +22,7 @@ void main() {
     bool paused = false,
     int volume = 100,
     bool showControls = false,
+    WorkoutOptions options = const WorkoutOptions(),
   }) => (tester, name) async {
     tester.view.devicePixelRatio = dpr;
     tester.view.physicalSize = size;
@@ -32,7 +33,7 @@ void main() {
       clock: clock,
     );
     if (timer) {
-      controller.start(const WorkoutOptions());
+      controller.start(options);
       clock.nowMs = time;
       controller.refresh();
       if (paused) controller.togglePause();
@@ -70,6 +71,30 @@ void main() {
   };
 
   final captures = {
+    for (final size in [const Size(1920, 1080), const Size(3200, 1800)])
+      for (final dpr in [1.0, 2.0])
+        for (final timer in [false, true])
+          '${timer ? 'timer' : 'settings'}_fullscreen_${size.width.toInt()}_${dpr.toInt()}':
+              capture(size * dpr, dpr, timer: timer, time: 5000),
+    'settings_longest_french': capture(
+      const Size(824, 1648),
+      1.875,
+      locale: 'fr',
+    ),
+    'timer_longest_french': capture(
+      const Size(824, 1648),
+      1.875,
+      timer: true,
+      time: 5000,
+      locale: 'fr',
+    ),
+    'timer_three_digits': capture(
+      const Size(824, 1648),
+      1.875,
+      timer: true,
+      time: 5000,
+      options: const WorkoutOptions(active: 120),
+    ),
     for (final dark in [false, true]) ...{
       'contrast_settings_${dark ? 'dark' : 'light'}': capture(
         const Size(618, 1125),
@@ -96,6 +121,31 @@ void main() {
     'settings_phone_1875': capture(const Size(824, 1648), 1.875),
     'settings_phone_250': capture(const Size(824, 1648), 2.5),
     'settings_desktop': capture(const Size(420, 760), 1),
+    'timer_desktop_active': capture(
+      const Size(420, 760),
+      1,
+      timer: true,
+      time: 5000,
+    ),
+    'timer_desktop_rest': capture(
+      const Size(420, 760),
+      1,
+      timer: true,
+      time: 50000,
+    ),
+    'timer_rest': capture(
+      const Size(824, 1648),
+      1.875,
+      timer: true,
+      time: 50000,
+    ),
+    'timer_fullscreen_prepare': capture(const Size(1920, 1080), 1, timer: true),
+    'timer_fullscreen_rest': capture(
+      const Size(1920, 1080),
+      1,
+      timer: true,
+      time: 50000,
+    ),
     'settings_short': capture(const Size(640, 400), 1),
     'settings_wide': capture(const Size(1440, 900), 1),
     'timer_phone_150': capture(const Size(824, 1648), 1.5, timer: true),
