@@ -1,7 +1,39 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keyProperties = Properties().apply {
+    rootProject.file("key.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+fun signingValue(property: String, environment: String): String? =
+    keyProperties.getProperty(property)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(environment)?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = signingValue("storeFile", "ANDROID_KEYSTORE_PATH")
+val releaseStorePassword = signingValue("storePassword", "ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "ANDROID_KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "ANDROID_KEY_PASSWORD")
+val signingValues = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+val hasReleaseKey = signingValues.all { it != null }
+val isTagBuild = System.getenv("GITHUB_REF_TYPE") == "tag" ||
+    System.getenv("GITHUB_REF")?.startsWith("refs/tags/") == true ||
+    System.getenv("EASYTIMER_REQUIRE_RELEASE_SIGNING") == "true"
+
+if (signingValues.any { it != null } && !hasReleaseKey) {
+    throw GradleException("Release signing is incomplete; provide all four properties or ANDROID_* variables.")
+}
+if (isTagBuild && !hasReleaseKey) {
+    // A published debug-signed APK could never be updated with the release key.
+    throw GradleException("Tag builds require the Android release signing key.")
+}
+if (hasReleaseKey && !rootProject.file(releaseStoreFile!!).isFile) {
+    throw GradleException("The configured Android release keystore does not exist.")
+}
+if (!hasReleaseKey) {
+    logger.warn("No Android release signing key configured; local release builds use the debug key.")
 }
 
 android {
@@ -15,25 +47,35 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "one.jiri.easytimer"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    dependenciesInfo {
+        // F-Droid cannot audit Google's encrypted dependency metadata.
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    sourceSets.getByName("main").assets.srcDir(rootProject.file("../../packaging/licenses"))
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 }
