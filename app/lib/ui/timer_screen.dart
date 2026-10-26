@@ -8,6 +8,7 @@ import '../workout_controller.dart';
 import 'controls.dart';
 import 'instant_scroll.dart';
 import 'native_style.dart';
+import 'palette.dart';
 import 'volume_control.dart';
 
 class TimerScreen extends StatelessWidget {
@@ -20,13 +21,14 @@ class TimerScreen extends StatelessWidget {
     valueListenable: controller.display,
     builder: (context, value, _) {
       final strings = AppLocalizations.of(context);
+      final colors = AppPalette.of(context);
       final (label, color) = switch (value.phase) {
         TimerPhase.prepare => (
           strings.prepareTimeLabel,
           nativeTextColor(context),
         ),
-        TimerPhase.active => (strings.activeTimeLabel, const Color(0xff1a9f0b)),
-        TimerPhase.rest => (strings.restTimeLabel, const Color(0xffab0606)),
+        TimerPhase.active => (strings.activeTimeLabel, colors.active),
+        TimerPhase.rest => (strings.restTimeLabel, colors.rest),
       };
       return InstantScrollView(
         builder: (context, constraints) {

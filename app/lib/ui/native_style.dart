@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'palette.dart';
+
 Color nativeTextColor(BuildContext context) =>
-    Theme.of(context).brightness == Brightness.dark
-    ? const Color(0xffc1c1c1)
-    : const Color(0xff6f6f6f);
+    AppPalette.of(context).foreground;
 
 double nativeDimension(BuildContext context, double value, [double scale = 1]) {
   final density = MediaQuery.devicePixelRatioOf(context);

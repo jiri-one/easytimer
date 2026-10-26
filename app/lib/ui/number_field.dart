@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'instant_scroll.dart';
 import 'native_style.dart';
+import 'palette.dart';
 import 'static_control.dart';
 
 class NumberField extends StatefulWidget {
@@ -42,8 +43,8 @@ class _NumberFieldState extends State<NumberField> {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final foreground = dark ? const Color(0xffeeeeee) : const Color(0xff212121);
+    final colors = AppPalette.of(context);
+    final foreground = colors.foreground;
     final style = NativeText.style(18 * widget.scale, foreground, false);
     return ListenableBuilder(
       listenable: Listenable.merge([_focus, widget.controller]),
@@ -57,13 +58,7 @@ class _NumberFieldState extends State<NumberField> {
             onTap: _focus.requestFocus,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: dark
-                        ? const Color(0xffaaaaaa)
-                        : const Color(0xff525252),
-                  ),
-                ),
+                border: Border(bottom: BorderSide(color: foreground)),
               ),
               child: Padding(
                 padding: EdgeInsets.symmetric(
@@ -122,9 +117,7 @@ class _NumberFieldState extends State<NumberField> {
                           backgroundCursorColor: foreground,
                           cursorOpacityAnimates: false,
                           showCursor: false,
-                          selectionColor: dark
-                              ? const Color(0xff666666)
-                              : const Color(0xffcccccc),
+                          selectionColor: colors.track,
                           // Selection handles and Material menus fade; keyboard and
                           // accessibility editing remain available without them.
                           contextMenuBuilder: null,

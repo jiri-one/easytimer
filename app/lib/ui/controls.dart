@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'static_control.dart';
+import 'palette.dart';
 
 enum ControlSymbol { play, pause, stop }
 
@@ -27,24 +28,25 @@ class CircleControl extends StatelessWidget {
       shape: BoxShape.circle,
       child: CustomPaint(
         size: Size.square(size),
-        painter: _ControlPainter(symbol),
+        painter: _ControlPainter(symbol, AppPalette.of(context).foreground),
       ),
     ),
   );
 }
 
 class _ControlPainter extends CustomPainter {
-  _ControlPainter(this.symbol);
+  _ControlPainter(this.symbol, this.outline);
 
   final ControlSymbol symbol;
+  final Color outline;
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.scale(size.width / 24);
     final color = switch (symbol) {
-      ControlSymbol.play => const Color(0xff88d86c),
-      ControlSymbol.pause => const Color(0xfff1ee0e),
-      ControlSymbol.stop => const Color(0xffcd4d2c),
+      ControlSymbol.play => AppPalette.playFill,
+      ControlSymbol.pause => AppPalette.pauseFill,
+      ControlSymbol.stop => AppPalette.stopFill,
     };
     final shape = Path()..addOval(const Rect.fromLTWH(2, 2, 20, 20));
     shape.fillType = PathFillType.evenOdd;
@@ -68,7 +70,7 @@ class _ControlPainter extends CustomPainter {
     canvas.drawPath(
       shape,
       Paint()
-        ..color = const Color(0xff222222)
+        ..color = outline
         ..style = PaintingStyle.stroke
         ..strokeWidth = .5,
     );
@@ -76,5 +78,5 @@ class _ControlPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ControlPainter oldDelegate) =>
-      symbol != oldDelegate.symbol;
+      symbol != oldDelegate.symbol || outline != oldDelegate.outline;
 }

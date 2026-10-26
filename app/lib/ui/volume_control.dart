@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'static_control.dart';
+import 'palette.dart';
 
 class VolumeControl extends StatefulWidget {
   const VolumeControl({
@@ -81,7 +82,7 @@ class _VolumeControlState extends State<VolumeControl> {
                   size: constraints.biggest,
                   painter: _VolumePainter(
                     widget.percent / 100,
-                    Theme.of(context).brightness == Brightness.dark,
+                    AppPalette.of(context),
                   ),
                 ),
               ),
@@ -94,10 +95,10 @@ class _VolumeControlState extends State<VolumeControl> {
 }
 
 class _VolumePainter extends CustomPainter {
-  const _VolumePainter(this.value, this.dark);
+  const _VolumePainter(this.value, this.colors);
 
   final double value;
-  final bool dark;
+  final AppPalette colors;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -114,23 +115,17 @@ class _VolumePainter extends CustomPainter {
       ),
       const Radius.circular(4),
     );
-    canvas.drawRRect(
-      track,
-      Paint()..color = dark ? const Color(0xff5f5f5f) : const Color(0xffcecece),
-    );
+    canvas.drawRRect(track, Paint()..color = colors.track);
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(0, center.dy, size.width, size.height));
-    canvas.drawRRect(
-      track,
-      Paint()..color = dark ? const Color(0xffcccccc) : const Color(0xff525252),
-    );
+    canvas.drawRRect(track, Paint()..color = colors.foreground);
     canvas.restore();
-    canvas.drawCircle(center, 16, Paint()..color = const Color(0xfff1f1f1));
+    canvas.drawCircle(center, 16, Paint()..color = colors.background);
     canvas.drawCircle(
       center,
       15,
       Paint()
-        ..color = const Color(0xff222222)
+        ..color = colors.foreground
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -139,14 +134,14 @@ class _VolumePainter extends CustomPainter {
     canvas.scale(20 / 24);
     canvas.drawPath(
       value == 0 ? _mutedSpeaker : _speaker,
-      Paint()..color = const Color(0xff222222),
+      Paint()..color = colors.foreground,
     );
     canvas.restore();
   }
 
   @override
   bool shouldRepaint(_VolumePainter oldDelegate) =>
-      oldDelegate.value != value || oldDelegate.dark != dark;
+      oldDelegate.value != value || oldDelegate.colors != colors;
 }
 
 final _speaker = Path()

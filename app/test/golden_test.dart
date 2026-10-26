@@ -70,6 +70,28 @@ void main() {
   };
 
   final captures = {
+    for (final dark in [false, true]) ...{
+      'contrast_settings_${dark ? 'dark' : 'light'}': capture(
+        const Size(618, 1125),
+        1.5,
+        dark: dark,
+        locale: 'cs',
+      ),
+      for (final (phase, time) in [
+        ('prepare', 0),
+        ('active', 5000),
+        ('rest', 50000),
+      ])
+        'contrast_${phase}_${dark ? 'dark' : 'light'}': capture(
+          const Size(618, 1125),
+          1.5,
+          timer: true,
+          time: time,
+          dark: dark,
+          locale: 'cs',
+          volume: 60,
+        ),
+    },
     'settings_phone_150': capture(const Size(824, 1648), 1.5),
     'settings_phone_1875': capture(const Size(824, 1648), 1.875),
     'settings_phone_250': capture(const Size(824, 1648), 2.5),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'l10n/app_localizations.dart';
 import 'ui/settings_screen.dart';
+import 'ui/palette.dart';
 import 'ui/timer_screen.dart';
 import 'workout_controller.dart';
 
@@ -44,15 +45,17 @@ class _EasyTimerAppState extends State<EasyTimerApp>
   }
 
   ThemeData _theme(Brightness brightness) {
-    final dark = brightness == Brightness.dark;
+    final colors = AppPalette.forBrightness(brightness);
     return ThemeData(
       brightness: brightness,
-      scaffoldBackgroundColor: dark
-          ? const Color(0xff303030)
-          : const Color(0xfffafafa),
+      scaffoldBackgroundColor: colors.background,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xff1a9f0b),
+        seedColor: colors.active,
         brightness: brightness,
+        surface: colors.background,
+        onSurface: colors.foreground,
+        primary: colors.foreground,
+        onPrimary: colors.background,
       ),
     );
   }

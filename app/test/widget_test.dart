@@ -594,7 +594,7 @@ void main() {
         .scale;
     expect(label.style!.fontSize, 20 * scale);
     expect(label.style!.fontWeight, FontWeight.bold);
-    expect(label.style!.color, const Color(0xff6f6f6f));
+    expect(label.style!.color, Colors.black);
     final minus = tester.getRect(find.byType(NumberStepButton).at(0));
     final plus = tester.getRect(find.byType(NumberStepButton).at(1));
     expect((plus.right - minus.left) / 412, closeTo(.8, .005));

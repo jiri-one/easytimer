@@ -2,7 +2,9 @@
 
 A simple interval timer for Android, Linux and the browser. EasyTimer is a Flutter
 rewrite of [Interval Timer](https://github.com/randombits-dev/interval-timer), with
-large controls, system light/dark colours and an interface suited to e-ink screens.
+large controls and high-contrast light/dark themes suited to e-ink screens.
+Text is black on white or white on black. Green ACTIVE and red REST labels
+have at least 7:1 contrast; the coloured control-button fills are preserved.
 
 Set **Active**, **Rest** and **Sets**, then press Start. Preparation lasts five
 seconds. An empty or zero set count repeats indefinitely. The last settings and
