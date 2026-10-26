@@ -132,6 +132,11 @@ class FakeAudioPlayer implements AudioPlayer {
   final attempts = <int>[];
   final _completions = StreamController<void>.broadcast();
   final void Function()? onStart;
+  bool requiresPreparation = true;
+  int completionStreamReads = 0;
+  int unpreparedSeeks = 0;
+  int unpreparedResumes = 0;
+  int _errorRevision = 0;
   Duration position = Duration.zero;
   FutureOr<void> Function(String) respond = (_) {};
   @override
@@ -141,9 +146,18 @@ class FakeAudioPlayer implements AudioPlayer {
   @override
   double volume = 1;
   @override
-  Stream<void> get onPlayerComplete => _completions.stream;
+  Stream<void> get onPlayerComplete {
+    completionStreamReads++;
+    return _completions.stream;
+  }
 
   bool get playing => state == PlayerState.playing;
+
+  void emitError([Object? error]) {
+    requiresPreparation = true;
+    _errorRevision++;
+    _completions.addError(error ?? StateError('Native player unprepared'));
+  }
 
   void complete() {
     state = PlayerState.completed;
@@ -177,8 +191,10 @@ class FakeAudioPlayer implements AudioPlayer {
       _call('context', context);
   @override
   Future<void> setSource(Source source) async {
+    final revision = _errorRevision;
     this.source = source;
     await _call('source', source);
+    if (revision == _errorRevision) requiresPreparation = false;
   }
 
   @override
@@ -187,12 +203,19 @@ class FakeAudioPlayer implements AudioPlayer {
 
   @override
   Future<void> setSourceDeviceFile(String path, {String? mimeType}) async {
+    final revision = _errorRevision;
     source = DeviceFileSource(path, mimeType: mimeType);
     await _call('file', path);
+    if (revision == _errorRevision) requiresPreparation = false;
   }
 
   @override
   Future<void> seek(Duration position) async {
+    if (requiresPreparation) {
+      unpreparedSeeks++;
+      calls.add(('seek', position));
+      throw StateError('An unprepared native seek would time out after 30s');
+    }
     await _call('seek', position);
     this.position = position;
   }
@@ -201,8 +224,12 @@ class FakeAudioPlayer implements AudioPlayer {
   Future<void> resume() async {
     attempts.add(clock.nowMs);
     await _call('resume');
-    starts.add((currentKind, clock.nowMs));
     state = PlayerState.playing;
+    if (requiresPreparation) {
+      unpreparedResumes++;
+      return;
+    }
+    starts.add((currentKind, clock.nowMs));
     onStart?.call();
   }
 

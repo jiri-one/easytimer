@@ -314,6 +314,301 @@ void main() {
     );
   }
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.linux]) {
+    final android = platform == TargetPlatform.android;
+    for (final kind in SoundKind.values) {
+      _nativeTest(
+        '$platform recovers repeated $kind errors with one completion listener',
+        (h) async {
+          h.backend.setVolume(50);
+          await h.backend.initialize();
+          final player = kind == SoundKind.alarm ? h.alarm : h.end;
+          final healthy = kind == SoundKind.alarm ? h.end : h.alarm;
+          final gains = <double>[];
+          player.respond = (method) {
+            if (method == 'resume') gains.add(player.volume);
+          };
+          for (var round = 0; round < 3; round++) {
+            player.emitError();
+            await h.pump();
+            player.calls.clear();
+            player.complete();
+            await h.pump();
+            expect(player.calls, isEmpty);
+            h.starts.clear();
+            gains.clear();
+            final event = SoundEvent(kind, h.clock.nowMs, null);
+            h.schedule([event]);
+            await h.pump();
+            expect(player.requiresPreparation, isFalse);
+            expect(player.calls.where((c) => c.$1 == 'source'), hasLength(1));
+            expect(healthy.calls.where((c) => c.$1 == 'source'), hasLength(1));
+            expect(gains, [if (android) 0.0, 0.25]);
+            expect(
+              h.starts,
+              List.filled(android ? 2 : 1, (kind, h.clock.nowMs)),
+            );
+            final context =
+                player.calls.singleWhere((c) => c.$1 == 'context').$2
+                    as AudioContext;
+            expect(context.android.audioFocus, AndroidAudioFocus.none);
+            expect(player.volume, 0.25);
+            h.schedule([event]);
+            await h.pump();
+            expect(gains, [if (android) 0.0, 0.25]);
+            player.calls.clear();
+            await h.complete();
+            expect(player.calls, [('seek', Duration.zero)]);
+            expect(player.completionStreamReads, 1);
+            expect(player.unpreparedSeeks, 0);
+            expect(player.unpreparedResumes, 0);
+            h.backend.cancel();
+            await h.pump(100);
+          }
+        },
+        platform: platform,
+      );
+
+      _nativeTest(
+        '$platform ignores a successful $kind resume reply after an error',
+        (h) async {
+          await h.backend.initialize();
+          h.starts.clear();
+          final player = kind == SoundKind.alarm ? h.alarm : h.end;
+          final pending = Completer<void>();
+          player.respond = (method) =>
+              method == 'resume' ? pending.future : null;
+          h.schedule([
+            SoundEvent(kind, 0, kind == SoundKind.alarm ? 49 : null),
+          ]);
+          await h.pump();
+          player.emitError();
+          await h.pump(100);
+          pending.complete();
+          await h.pump();
+          expect(h.starts, isEmpty);
+          expect(player.unpreparedResumes, 1);
+          expect(player.unpreparedSeeks, 0);
+          expect(player.playing, isFalse);
+          player.respond = (_) {};
+          final retry = SoundEvent(
+            kind,
+            kind == SoundKind.alarm ? 100 : 0,
+            null,
+          );
+          h.schedule([retry]);
+          await h.pump();
+          expect(h.starts, List.filled(android ? 2 : 1, (kind, 100)));
+          expect(player.calls.where((c) => c.$1 == 'source'), hasLength(2));
+          h.schedule([retry]);
+          await h.pump();
+          expect(h.starts, hasLength(android ? 2 : 1));
+          h.backend.setVolume(50);
+          await h.pump();
+          expect(player.volume, 0.25);
+          h.backend.cancel();
+          await h.pump();
+          expect(player.playing, kind == SoundKind.end);
+        },
+        platform: platform,
+      );
+    }
+
+    _nativeTest('$platform recovery does not seek a healthy playing alarm', (
+      h,
+    ) async {
+      await h.backend.initialize();
+      h.schedule(const [SoundEvent(SoundKind.alarm, 0, 49)]);
+      await h.pump();
+      h.alarm.calls.clear();
+      h.end.emitError();
+      await h.pump();
+      h.backend.setVolume(50);
+      await h.pump();
+      expect(h.alarm.volume, 0.25);
+      h.alarm.calls.clear();
+      final source = Completer<void>();
+      h.end.respond = (method) => method == 'source' ? source.future : null;
+      final recovery = h.backend.initialize();
+      await h.pump();
+      h.backend.setVolume(75);
+      await h.pump();
+      if (!android) expect(h.alarm.volume, 0.5625);
+      source.complete();
+      await h.pump();
+      await recovery;
+      expect(h.alarm.calls.where((c) => c.$1 == 'source'), isEmpty);
+      expect(h.alarm.calls.where((c) => c.$1 == 'resume'), isEmpty);
+      expect(
+        h.alarm.calls.where((c) => c.$1 == 'seek'),
+        android ? [('seek', Duration.zero)] : isEmpty,
+      );
+      if (android) {
+        expect(h.alarm.calls.take(2), [
+          ('stop', null),
+          ('seek', Duration.zero),
+        ]);
+      }
+      expect(h.alarm.playing, !android);
+      expect(h.end.calls.where((c) => c.$1 == 'source'), hasLength(2));
+      h.schedule(const [SoundEvent(SoundKind.end, 100, null)]);
+      await h.pump(100);
+      expect(h.end.playing, isTrue);
+    }, platform: platform);
+  }
+
+  for (final operation in [
+    'mode',
+    'release',
+    'context',
+    'source',
+    'mute',
+    'resume',
+    'pause',
+    'seek',
+    'restore',
+  ]) {
+    _nativeTest(
+      'Android error during initialization $operation invalidates its late reply',
+      (h) async {
+        h.backend.setVolume(50);
+        final pending = Completer<void>();
+        var waiting = false;
+        h.end.respond = (method) {
+          final matches = switch (operation) {
+            'mute' => method == 'volume' && h.end.volume == 0,
+            'restore' => method == 'volume' && h.end.volume != 0,
+            _ => method == operation,
+          };
+          if (matches && !waiting) {
+            waiting = true;
+            return pending.future;
+          }
+          return null;
+        };
+        final first = h.backend.initialize();
+        await h.pump();
+        expect(waiting, isTrue);
+        h.end.emitError();
+        await h.pump();
+        if (operation != 'seek') {
+          expect(identical(first, h.backend.initialize()), isTrue);
+          pending.complete();
+          await h.pump();
+        }
+        await first;
+        expect(h.end.requiresPreparation, isTrue);
+        h.end.calls.clear();
+        h.starts.clear();
+        await h.backend.initialize();
+        expect(h.end.requiresPreparation, isFalse);
+        expect(h.end.calls.where((c) => c.$1 == 'source'), hasLength(1));
+        expect(h.end.calls.where((c) => c.$1 == 'resume'), hasLength(1));
+        expect(h.end.calls.where((c) => c.$1 == 'seek'), hasLength(1));
+        expect(h.end.calls.where((c) => c.$1 == 'volume').map((c) => c.$2), [
+          0,
+          0.25,
+        ]);
+        expect(h.alarm.calls.where((c) => c.$1 == 'source'), hasLength(1));
+        expect(h.alarm.attempts, hasLength(1));
+        expect(h.end.completionStreamReads, 1);
+        expect(h.end.unpreparedSeeks, 0);
+        expect(h.starts, [(SoundKind.end, 0)]);
+        if (operation == 'seek') {
+          pending.complete();
+          await h.pump();
+        }
+        h.starts.clear();
+        h.schedule(const [SoundEvent(SoundKind.end, 0, null)]);
+        await h.pump();
+        expect(h.starts, [(SoundKind.end, 0)]);
+        expect(h.end.volume, 0.25);
+      },
+      platform: TargetPlatform.android,
+    );
+  }
+
+  for (final trigger in ['completion', 'stop']) {
+    for (final lateError in [false, true]) {
+      _nativeTest(
+        '$trigger error abandons an old seek without clearing a newer one (lateError=$lateError)',
+        (h) async {
+          h.schedule(const [SoundEvent(SoundKind.alarm, 0, 49)]);
+          await h.pump();
+          final obsolete = Completer<void>();
+          h.alarm.respond = (method) =>
+              method == 'seek' ? obsolete.future : null;
+          if (trigger == 'completion') {
+            await h.complete();
+          } else {
+            h.backend.cancel();
+            await h.pump();
+          }
+          h.schedule(const [SoundEvent(SoundKind.alarm, 3000, 3049)]);
+          await h.pump(3000);
+          h.alarm.respond = (_) {};
+          h.alarm.emitError();
+          await h.pump();
+          await h.pump(10);
+          expect(h.starts, [(SoundKind.alarm, 0), (SoundKind.alarm, 3010)]);
+          expect(h.alarm.calls.where((c) => c.$1 == 'source'), hasLength(2));
+          expect(h.alarm.unpreparedSeeks, 0);
+          final current = Completer<void>();
+          h.alarm.respond = (method) =>
+              method == 'seek' ? current.future : null;
+          await h.complete();
+          if (lateError) {
+            obsolete.completeError(StateError('obsolete seek'));
+          } else {
+            obsolete.complete();
+          }
+          await h.pump();
+          h.alarm.calls.clear();
+          h.schedule(const [SoundEvent(SoundKind.alarm, 6000, 6049)]);
+          await h.pump(2990);
+          expect(h.starts, hasLength(2));
+          expect(h.alarm.calls, isEmpty);
+          current.complete();
+          await h.pump();
+          expect(h.starts.last, (SoundKind.alarm, 6000));
+          expect(h.alarm.calls, [('resume', null)]);
+        },
+      );
+    }
+  }
+
+  _nativeTest(
+    'Android recovery waits for an older live gain update before muting',
+    (h) async {
+      await h.backend.initialize();
+      final volume = Completer<void>();
+      h.alarm.respond = (method) => method == 'volume' ? volume.future : null;
+      h.backend.setVolume(25);
+      await h.pump();
+      h.end.emitError();
+      await h.pump();
+      h.starts.clear();
+      h.end.calls.clear();
+      final recovery = h.backend.initialize();
+      await h.pump();
+      expect(h.end.calls, isEmpty);
+      h.backend.setVolume(75);
+      final gains = <double>[];
+      h.end.respond = (method) {
+        if (method == 'resume') gains.add(h.end.volume);
+      };
+      volume.complete();
+      await h.pump();
+      await recovery;
+      expect(gains, [0.0]);
+      expect(h.end.volume, 0.5625);
+      h.schedule(const [SoundEvent(SoundKind.end, 0, null)]);
+      await h.pump();
+      expect(gains, [0.0, 0.5625]);
+    },
+    platform: TargetPlatform.android,
+  );
+
   _nativeTest('sorted overlapping plans keep one pending instance per cue', (
     h,
   ) async {

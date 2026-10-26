@@ -91,6 +91,8 @@ any rewind still in progress. Android silently primes each player once during
 initialization, then pauses and rewinds it before restoring the current volume.
 The media context requests no audio focus, including during priming. Device mixer
 latency remains outside the app's control.
+Audio errors invalidate the affected player's preparation. Later playback reloads
+its source and, on Android, silently primes it again before playing a cue.
 Linux reuses stable `audio/alarm.wav` and `audio/end.wav` files in the application's
 cache directory. Files are published atomically and recreated after eviction.
 The original bundled WAV files are unchanged. The web backend decodes the same buffers into

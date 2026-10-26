@@ -68,7 +68,14 @@ class PlatformBackend extends TimerPlatform {
          SoundKind.alarm:
              alarmPlayer ?? (AudioPlayer()..positionUpdater = null),
          SoundKind.end: endPlayer ?? (AudioPlayer()..positionUpdater = null),
-       };
+       } {
+    for (final kind in SoundKind.values) {
+      _players[kind]!.onPlayerComplete.listen((_) {
+        _rewound.remove(kind);
+        unawaited(_rewind(kind).catchError((Object _) {}));
+      }, onError: (Object _) => _invalidate(kind));
+    }
+  }
 
   final MonotonicClock _clock;
   final Map<SoundKind, AudioPlayer> _players;
@@ -76,8 +83,9 @@ class PlatformBackend extends TimerPlatform {
   final _sources = <SoundKind, _CachedBytesSource>{};
   final _prepared = <SoundKind>{};
   final _primed = <SoundKind>{};
-  final _rewound = <AudioPlayer>{};
-  final _rewinds = <AudioPlayer, Future<void>>{};
+  final _rewound = <SoundKind>{};
+  final _rewinds = <SoundKind, Completer<void>>{};
+  final _failures = <SoundKind, int>{};
   final _stops = <Future<void>>{};
   Future<void>? _initialization;
   Future<void>? _volumeUpdate;
@@ -86,58 +94,106 @@ class PlatformBackend extends TimerPlatform {
   SoundKind? _resuming;
   SoundKind? _playing;
   int _revision = 0;
+  int _audioRevision = 0;
   double _gain = 1;
   bool _initialized = false;
 
   @override
-  Future<void> initialize() => _initialization ??=
-      () async {
-        if (_sources.isEmpty) {
-          final bytes = await Future.wait(SoundKind.values.map(loadSound));
-          for (final kind in SoundKind.values) {
-            _sources[kind] = _CachedBytesSource(kind, bytes[kind.index]);
-          }
+  Future<void> initialize() {
+    if (_initialized) return Future.value();
+    return _initialization ??= () async {
+      final revision = _audioRevision;
+      void check() {
+        if (revision != _audioRevision) {
+          throw StateError('Player preparation invalidated');
         }
+      }
+
+      while (_stops.isNotEmpty) {
+        await Future.wait(_stops.toList());
+        check();
+      }
+      if (_audioRevision != 0 &&
+          defaultTargetPlatform == TargetPlatform.android) {
         for (final entry in _players.entries) {
-          final player = entry.value;
-          if (!_prepared.contains(entry.key)) {
-            // SoundPool does not report reliable completion, so state goes stale.
-            await player.setPlayerMode(PlayerMode.mediaPlayer);
-            await player.setReleaseMode(ReleaseMode.stop);
-            await player.setAudioContext(
-              AudioContext(
-                android: const AudioContextAndroid(
-                  usageType: AndroidUsageType.media,
-                  contentType: AndroidContentType.sonification,
-                  audioFocus: AndroidAudioFocus.none,
-                ),
-              ),
-            );
-            await player.setSource(_sources[entry.key]!);
-            player.onPlayerComplete.listen((_) {
-              _rewound.remove(player);
-              unawaited(_rewind(player).catchError((Object _) {}));
-            }, onError: (Object _) {});
-            _prepared.add(entry.key);
+          if (_prepared.contains(entry.key) &&
+              entry.value.state == PlayerState.playing) {
+            await _stop(entry.key);
+            check();
           }
-          if (defaultTargetPlatform == TargetPlatform.android &&
-              !_primed.contains(entry.key)) {
-            // Android allocates its AudioTrack on first start; warm it silently.
-            await player.setVolume(0);
-            try {
-              await player.resume();
-            } finally {
-              await player.pause();
-            }
-            _primed.add(entry.key);
-          }
-          await _rewind(player);
         }
-        await _applyVolume();
-        _initialized = true;
-      }().catchError((Object _) {
-        _initialization = null;
-      });
+      }
+      // Let an older live gain update finish before muting a recovery prime.
+      await _volumeUpdate;
+      check();
+      if (_sources.isEmpty) {
+        final bytes = await Future.wait(SoundKind.values.map(loadSound));
+        for (final kind in SoundKind.values) {
+          _sources[kind] = _CachedBytesSource(kind, bytes[kind.index]);
+        }
+      }
+      check();
+      for (final entry in _players.entries) {
+        final player = entry.value;
+        if (!_prepared.contains(entry.key)) {
+          if (_failures.containsKey(entry.key)) {
+            // Native playing can outlive its Dart state after an error.
+            await _stop(entry.key);
+            check();
+          }
+          // SoundPool does not report reliable completion, so state goes stale.
+          await player.setPlayerMode(PlayerMode.mediaPlayer);
+          check();
+          await player.setReleaseMode(ReleaseMode.stop);
+          check();
+          await player.setAudioContext(
+            AudioContext(
+              android: const AudioContextAndroid(
+                usageType: AndroidUsageType.media,
+                contentType: AndroidContentType.sonification,
+                audioFocus: AndroidAudioFocus.none,
+              ),
+            ),
+          );
+          check();
+          await player.setSource(_sources[entry.key]!);
+          check();
+          _prepared.add(entry.key);
+        }
+        if (defaultTargetPlatform == TargetPlatform.android &&
+            !_primed.contains(entry.key)) {
+          // Android allocates its AudioTrack on first start; warm it silently.
+          await player.setVolume(0);
+          check();
+          try {
+            await player.resume();
+          } finally {
+            await player.pause();
+          }
+          check();
+          _primed.add(entry.key);
+        }
+        if (player.state != PlayerState.playing) await _rewind(entry.key);
+        check();
+      }
+      await _volumeUpdate;
+      check();
+      await _applyVolume();
+      check();
+      _initialized = true;
+    }().catchError((Object _) {}).whenComplete(() => _initialization = null);
+  }
+
+  void _invalidate(SoundKind kind) {
+    _failures[kind] = ++_audioRevision;
+    _prepared.remove(kind);
+    _primed.remove(kind);
+    _rewound.remove(kind);
+    _initialized = false;
+    if (_playing == kind) _playing = null;
+    // The plugin cannot complete a seek while its native player is unprepared.
+    _rewinds.remove(kind)?.completeError(StateError('Player invalidated'));
+  }
 
   @override
   void schedule(List<SoundEvent> events) {
@@ -169,6 +225,13 @@ class PlatformBackend extends TimerPlatform {
     _inFlight = event;
     bool current() => revision == _revision;
     final player = _players[event.kind]!;
+    final failure = _failures[event.kind];
+    void check() {
+      if (failure != _failures[event.kind]) {
+        throw StateError('Cue player invalidated');
+      }
+    }
+
     try {
       await initialize();
       if (!current()) return;
@@ -176,6 +239,7 @@ class PlatformBackend extends TimerPlatform {
         _policy.failed(event);
         return;
       }
+      check();
       // A delayed stop reply must settle before the same player is reused.
       while (_stops.isNotEmpty) {
         await Future.wait(_stops.toList());
@@ -183,26 +247,30 @@ class PlatformBackend extends TimerPlatform {
       if (!current()) return;
       await _sources[event.kind]!.ensureAvailable();
       if (!current()) return;
-      for (final other in _players.values) {
-        if (other.state == PlayerState.playing) await _stop(other);
+      check();
+      for (final other in _players.entries) {
+        if (other.value.state == PlayerState.playing) await _stop(other.key);
         if (!current()) return;
+        check();
       }
       _playing = null;
-      await _rewind(player);
+      await _rewind(event.kind);
       if (!current()) return;
-      _rewound.remove(player);
+      check();
+      _rewound.remove(event.kind);
       _resuming = event.kind;
       await player.resume();
       if (!current()) {
         // The plugin cannot retract a submitted resume or bound its latency.
-        await _stop(player);
+        await _stop(event.kind);
         return;
       }
+      check();
       _playing = event.kind;
       _policy.started(event);
     } catch (_) {
       if (_resuming != null) {
-        await _stop(player).catchError((Object _) {});
+        await _stop(event.kind).catchError((Object _) {});
       }
       if (current()) _policy.failed(event);
     } finally {
@@ -216,25 +284,37 @@ class PlatformBackend extends TimerPlatform {
     }
   }
 
-  Future<void> _stop(AudioPlayer player) {
-    _rewound.remove(player);
-    final stop = player.stop().then((_) {
-      unawaited(_rewind(player).catchError((Object _) {}));
+  Future<void> _stop(SoundKind kind) {
+    _rewound.remove(kind);
+    final stop = _players[kind]!.stop().then((_) {
+      unawaited(_rewind(kind).catchError((Object _) {}));
     });
     _stops.add(stop);
     return stop.whenComplete(() => _stops.remove(stop));
   }
 
-  Future<void> _rewind(AudioPlayer player) {
-    if (_rewound.contains(player)) return Future.value();
-    return _rewinds[player] ??= () async {
+  Future<void> _rewind(SoundKind kind) {
+    if (!_prepared.contains(kind) || _rewound.contains(kind)) {
+      return Future.value();
+    }
+    final pending = _rewinds[kind];
+    if (pending != null) return pending.future;
+    final rewind = Completer<void>();
+    _rewinds[kind] = rewind;
+    unawaited(() async {
       try {
-        await player.seek(Duration.zero);
-        _rewound.add(player);
+        await _players[kind]!.seek(Duration.zero);
+        if (!rewind.isCompleted) {
+          _rewound.add(kind);
+          rewind.complete();
+        }
+      } catch (error, stack) {
+        if (!rewind.isCompleted) rewind.completeError(error, stack);
       } finally {
-        _rewinds.remove(player);
+        if (identical(_rewinds[kind], rewind)) _rewinds.remove(kind);
       }
-    }();
+    }());
+    return rewind.future;
   }
 
   @override
@@ -252,7 +332,7 @@ class PlatformBackend extends TimerPlatform {
           _resuming != entry.key;
       if (!keep && (playing || _resuming == entry.key)) {
         // Cancellation must bypass an unfinished resume, even for an end cue.
-        unawaited(_stop(entry.value).catchError((Object _) {}));
+        unawaited(_stop(entry.key).catchError((Object _) {}));
       }
     }
   }
@@ -262,7 +342,9 @@ class PlatformBackend extends TimerPlatform {
     do {
       sent = _gain;
       await Future.wait(
-        _players.values.map((player) => player.setVolume(sent)),
+        _players.entries
+            .where((entry) => _prepared.contains(entry.key))
+            .map((entry) => entry.value.setVolume(sent)),
       );
     } while (sent != _gain);
   }().whenComplete(() => _volumeUpdate = null);
@@ -272,7 +354,10 @@ class PlatformBackend extends TimerPlatform {
     final gain = gainOf(percent);
     if (gain == _gain) return;
     _gain = gain;
-    if (_initialized) {
+    if (_initialized ||
+        (_playing != null &&
+            _prepared.contains(_playing) &&
+            _players[_playing]!.state == PlayerState.playing)) {
       unawaited(_applyVolume().catchError((Object _) {}));
     }
   }
