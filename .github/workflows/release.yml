@@ -78,11 +78,14 @@ jobs:
           fi
           umask 077
           printf '%s' "$KEYSTORE" | base64 -d > release.jks
-          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
-            "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > key.properties
       - working-directory: app
         run: flutter pub get --enforce-lockfile
       - working-directory: app
+        env:
+          ANDROID_KEYSTORE_PATH: release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter build apk --release --no-pub
           mkdir -p ../dist
@@ -93,7 +96,7 @@ jobs:
           done
       - name: Remove signing material
         if: always()
-        run: rm -f app/android/release.jks app/android/key.properties
+        run: rm -f app/android/release.jks
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android
