@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,10 +11,17 @@ import 'workout_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    final display =
+        WidgetsBinding.instance.platformDispatcher.implicitView!.display;
+    await SystemChrome.setPreferredOrientations(
+      display.size.shortestSide / display.devicePixelRatio < 600
+          ? [DeviceOrientation.portraitUp]
+          : [],
+    );
+  }
   final settings = await TimerSettings.load();
   final platform = createTimerPlatform();
-  final fonts = FontLoader('DroidSansMono')
-    ..addFont(rootBundle.load('assets/fonts/DroidSansMono.ttf'));
-  await Future.wait([platform.initialize(), fonts.load()]);
+  unawaited(platform.initialize().catchError((Object _) {}));
   runApp(EasyTimerApp(controller: WorkoutController(settings, platform)));
 }

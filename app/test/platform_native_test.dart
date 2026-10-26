@@ -1,501 +1,449 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:easytimer/platform/timer_platform_native.dart';
 import 'package:easytimer/timer_engine.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'test_support.dart';
 
-const _channel = MethodChannel('easytimer/platform');
+class _Player implements AudioPlayer {
+  _Player(this.clock);
 
-class _NativeHarness {
-  _NativeHarness(this.tester) {
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(_channel, (
-      call,
-    ) async {
-      calls.add(call);
-      if (call.method == 'playAlarm' || call.method == 'playEnd') {
-        plays.add((call.method, clock.nowMs));
-      }
-      final result = await respond(call);
-      if ((call.method == 'playAlarm' || call.method == 'playEnd') &&
-          result == true) {
-        return {'startedAtMs': clock.nowMs};
-      }
-      return result;
-    });
+  final FakeClock clock;
+  final completed = StreamController<void>.broadcast();
+  final calls = <(String, Object?)>[];
+  final starts = <(String, int)>[];
+  final attempts = <int>[];
+  FutureOr<void> Function(String) respond = (_) {};
+  String asset = '';
+  bool playing = false;
+
+  Future<void> _call(String method, [Object? value]) async {
+    calls.add((method, value));
+    await respond(method);
   }
 
-  final WidgetTester tester;
-  late final backend = PlatformBackend(dispatchClock: dispatchClock);
-  final clock = FakeClock();
-  final dispatchClock = FakeClock();
-  final calls = <MethodCall>[];
-  final plays = <(String, int)>[];
-  FutureOr<Object?> Function(MethodCall) respond = (_) => true;
-
-  Future<void> pump([int milliseconds = 0]) => _pump(milliseconds);
-
-  Future<void> _pump(int milliseconds) {
-    dispatchClock.nowMs += milliseconds;
-    return advanceClock(tester, clock, milliseconds);
+  @override
+  Stream<void> get onPlayerComplete => completed.stream;
+  @override
+  Future<void> setPlayerMode(PlayerMode mode) => _call('mode', mode);
+  @override
+  Future<void> setReleaseMode(ReleaseMode mode) => _call('release', mode);
+  @override
+  Future<void> setAudioContext(AudioContext context) =>
+      _call('context', context);
+  @override
+  Future<void> setSource(Source source) async {
+    await _call('source', (source as AssetSource).path);
+    asset = source.path;
   }
 
-  void schedule(List<SoundEvent> events) => backend.schedule(events, clock);
+  @override
+  Future<void> resume() async {
+    attempts.add(clock.nowMs);
+    await _call('resume');
+    starts.add((asset, clock.nowMs));
+    playing = true;
+  }
+
+  @override
+  Future<void> stop() async {
+    await _call('stop');
+    playing = false;
+  }
+
+  @override
+  Future<void> setVolume(double volume) => _call('volume', volume);
+  @override
+  Future<void> dispose() async {
+    await _call('dispose');
+    playing = false;
+    await completed.close();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-void _nativeTest(
-  String description,
-  Future<void> Function(_NativeHarness) body,
-) {
-  testWidgets(description, (tester) async {
-    final harness = _NativeHarness(tester);
+class _Backend extends PlatformBackend {
+  _Backend(AudioPlayer player) : super(player: player);
+
+  @override
+  void keepAwake(bool enabled) {}
+}
+
+class _Harness {
+  _Harness(this.tester);
+
+  final WidgetTester tester;
+  final clock = FakeClock();
+  late final player = _Player(clock);
+  late final backend = _Backend(player);
+
+  Future<void> pump([int milliseconds = 0]) =>
+      advanceClock(tester, clock, milliseconds);
+
+  void schedule(List<SoundEvent> events) => backend.schedule(events, clock);
+
+  Future<void> complete() async {
+    player.playing = false;
+    player.completed.add(null);
+    await pump();
+  }
+}
+
+void _nativeTest(String name, Future<void> Function(_Harness) body) {
+  testWidgets(name, (tester) async {
+    final h = _Harness(tester);
     try {
-      await body(harness);
+      await body(h);
     } finally {
-      harness.backend.dispose();
+      h.backend.dispose();
       await tester.pump();
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        _channel,
-        null,
-      );
     }
   });
 }
 
 void main() {
-  _nativeTest('initialize sends the real bundled WAV bytes to native audio', (
-    h,
-  ) async {
-    // Future.wait requires replies after all asset futures are registered.
-    h.tester.binding.defaultBinaryMessenger.setMockMessageHandler(
-      'flutter/assets',
-      (message) async {
-        final path = utf8.decode(Uint8List.sublistView(message!));
-        return ByteData.sublistView(File(path).readAsBytesSync());
-      },
-    );
-    await h.backend.initialize();
-    final initialize = h.calls.singleWhere(
-      (call) => call.method == 'initialize',
-    );
-    final arguments = initialize.arguments as Map<Object?, Object?>;
-    for (final (key, file) in [
-      ('alarm', 'assets/audio/threesecbeep.wav'),
-      ('end', 'assets/audio/hit.wav'),
-    ]) {
-      final bytes = arguments[key] as Uint8List;
-      expect(bytes, orderedEquals(File(file).readAsBytesSync()));
-      expect(String.fromCharCodes(bytes.take(4)), 'RIFF');
-      expect(String.fromCharCodes(bytes.sublist(8, 12)), 'WAVE');
-    }
-  });
-
-  _nativeTest('future alarms are single shots despite overlapping schedules', (
-    h,
-  ) async {
-    const event = SoundEvent(SoundKind.alarm, 2000, 2049);
-    h.schedule([event, event]);
-    h.schedule([event]);
-    await h.pump(1999);
-    expect(h.plays, isEmpty);
-    await h.pump(1);
-    expect(h.plays, [('playAlarm', 2000)]);
-    h.schedule([event]);
-    await h.pump(49);
-    expect(h.plays, [('playAlarm', 2000)]);
-  });
-
-  _nativeTest('plays each phase beep and the finite finish exactly once', (
-    h,
-  ) async {
-    final engine = TimerEngine(h.clock)
-      ..start(const WorkoutOptions(active: 5, rest: 3, sets: 2));
-    final events = engine.soundsBetween(0, 300000);
-    h.schedule(events);
-    for (final elapsed in [2000, 5000, 3000, 5000, 3000]) {
-      await h.pump(elapsed);
-      h.schedule(
-        engine.soundsBetween(h.clock.nowMs - 49, h.clock.nowMs + 300000),
-      );
-      await h.pump();
-    }
-    h.schedule([const SoundEvent(SoundKind.end, 18000, 18000)]);
-    h.backend.cancel(keepEnd: true);
-    await h.pump();
-    expect(h.plays, [
-      ('playAlarm', 2000),
-      ('playAlarm', 7000),
-      ('playAlarm', 10000),
-      ('playAlarm', 15000),
-      ('playEnd', 18000),
-    ]);
-    expect(h.calls.last.method, 'cancelAlarm');
-  });
-
-  _nativeTest(
-    'failed alarm plays retry without consuming the duplicate guard',
-    (h) async {
-      var attempts = 0;
-      h.respond = (call) => call.method != 'playAlarm' || ++attempts >= 3;
-      h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
-      await h.pump(100);
-      await h.pump(10);
-      await h.pump(10);
-      h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
-      await h.pump(29);
-      expect(h.plays, [
-        ('playAlarm', 100),
-        ('playAlarm', 110),
-        ('playAlarm', 120),
-      ]);
-    },
-  );
-
-  for (final failure in [
-    'false',
-    'null',
-    'platform exception',
-    'missing plugin',
-  ]) {
-    _nativeTest('a $failure play result can retry within the window', (
-      h,
-    ) async {
-      var attempts = 0;
-      h.respond = (call) {
-        if (call.method != 'playAlarm' || ++attempts > 1) return true;
-        return switch (failure) {
-          'false' => false,
-          'null' => null,
-          'platform exception' => throw PlatformException(code: 'not-ready'),
-          _ => throw MissingPluginException(),
-        };
-      };
-      h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
-      await h.pump(100);
-      await h.pump(10);
-      await h.pump(100);
-      expect(h.plays, [('playAlarm', 100), ('playAlarm', 110)]);
-    });
-  }
-
-  _nativeTest(
-    'persistent failures stop retrying when the alarm window closes',
-    (h) async {
-      h.respond = (call) => call.method != 'playAlarm';
-      h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
-      await h.pump(100);
-      for (var retry = 0; retry < 5; retry++) {
-        await h.pump(10);
-      }
-      await h.pump(1000);
-      expect(h.plays, [
-        ('playAlarm', 100),
-        ('playAlarm', 110),
-        ('playAlarm', 120),
-        ('playAlarm', 130),
-        ('playAlarm', 140),
-      ]);
-    },
-  );
-
-  for (final lateBy in [0, 49, 50]) {
-    _nativeTest('a callback $lateBy ms late respects the 2951 ms cutoff', (
-      h,
-    ) async {
-      h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
-      h.clock.nowMs = 100 + lateBy;
-      await h.tester.pump(const Duration(milliseconds: 100));
-      expect(h.plays, lateBy <= 49 ? [('playAlarm', 100 + lateBy)] : isEmpty);
-    });
-  }
-
-  _nativeTest('the guard allows the next alarm at exactly 3000 ms', (h) async {
-    h.schedule([
-      const SoundEvent(SoundKind.alarm, 0, 49),
-      const SoundEvent(SoundKind.alarm, 2999, 3048),
-      const SoundEvent(SoundKind.alarm, 3000, 3049),
-    ]);
-    await h.pump();
-    await h.pump(2999);
-    await h.pump(1);
-    expect(h.plays, [('playAlarm', 0), ('playAlarm', 3000)]);
-  });
-
-  _nativeTest(
-    'full cancel stops current audio and removes every pending sound',
-    (h) async {
-      h.schedule([
-        const SoundEvent(SoundKind.alarm, 0, 49),
-        const SoundEvent(SoundKind.alarm, 5000, 5049),
-        const SoundEvent(SoundKind.end, 10000, 10000),
-      ]);
-      await h.pump();
-      h.backend.cancel();
-      await h.pump();
-      expect(h.calls.last.method, 'stop');
-      await h.pump(10000);
-      expect(h.plays, [('playAlarm', 0)]);
-    },
-  );
-
-  _nativeTest('cancel resets both duplicate IDs and the 3000 ms guard', (
-    h,
-  ) async {
-    const event = SoundEvent(SoundKind.alarm, 0, 49);
-    h.schedule([event]);
-    await h.pump();
-    h.backend.cancel();
-    h.schedule([event]);
-    await h.pump();
-    expect(h.plays, [('playAlarm', 0), ('playAlarm', 0)]);
-  });
-
-  _nativeTest('cancel also removes a pending failed-play retry', (h) async {
-    h.respond = (call) => call.method != 'playAlarm';
+  _nativeTest('initialization gates playback and shares one future', (h) async {
+    final loading = Completer<void>();
+    h.player.respond = (method) => method == 'source' ? loading.future : null;
+    final first = h.backend.initialize();
+    expect(identical(first, h.backend.initialize()), isTrue);
     h.schedule([const SoundEvent(SoundKind.alarm, 0, 49)]);
     await h.pump();
-    h.backend.cancel();
-    await h.pump(10);
-    await h.pump(100);
-    expect(h.plays, [('playAlarm', 0)]);
+    expect(h.player.starts, isEmpty);
+    loading.complete();
+    await h.pump();
+    expect(h.player.starts, [('audio/threesecbeep.wav', 0)]);
+    expect(
+      h.player.calls.where((call) => call.$1 == 'mode').single.$2,
+      PlayerMode.mediaPlayer,
+    );
+    expect(
+      h.player.calls.where((call) => call.$1 == 'release').single.$2,
+      ReleaseMode.stop,
+    );
+    final context =
+        h.player.calls.singleWhere((call) => call.$1 == 'context').$2
+            as AudioContext;
+    expect(context.android.usageType, AndroidUsageType.media);
+    expect(context.android.contentType, AndroidContentType.sonification);
+    expect(context.android.audioFocus, AndroidAudioFocus.none);
   });
 
-  _nativeTest(
-    'completion cancels current and pending alarms but preserves finish',
-    (h) async {
-      h.schedule([
-        const SoundEvent(SoundKind.alarm, 0, 49),
-        const SoundEvent(SoundKind.alarm, 5000, 5049),
-        const SoundEvent(SoundKind.end, 10000, 10000),
-      ]);
-      await h.pump();
-      h.backend.cancel(keepEnd: true);
-      await h.pump();
-      expect(h.calls.last.method, 'cancelAlarm');
-      await h.pump(5000);
-      expect(h.plays, [('playAlarm', 0)]);
-      await h.pump(5000);
-      h.schedule([const SoundEvent(SoundKind.end, 10000, 10000)]);
-      h.backend.cancel(keepEnd: true);
-      await h.pump();
-      expect(h.plays, [('playAlarm', 0), ('playEnd', 10000)]);
-    },
-  );
-
-  _nativeTest(
-    'a late active callback skips stale alarms while completion still plays',
-    (h) async {
-      final engine = TimerEngine(h.clock)
-        ..start(const WorkoutOptions(active: 5, rest: 0, sets: 1));
-      h.schedule(engine.soundsBetween(0, 300000));
-      h.clock.nowMs = 20000;
-      await h.tester.pump(const Duration(seconds: 20));
-      expect(h.plays, [('playEnd', 20000)]);
-      h.schedule([const SoundEvent(SoundKind.end, 10000, 10000)]);
-      await h.pump();
-      expect(h.plays, [('playEnd', 20000)]);
-    },
-  );
-
-  _nativeTest('completion is attempted once even if native play fails', (
+  _nativeTest('sorted overlapping plans keep one pending instance per cue', (
     h,
   ) async {
-    h.respond = (call) => call.method != 'playEnd';
-    const event = SoundEvent(SoundKind.end, 0, 0);
-    h.schedule([event]);
-    await h.pump();
-    h.schedule([event]);
-    await h.pump(1000);
-    expect(h.plays, [('playEnd', 0)]);
+    const first = SoundEvent(SoundKind.alarm, 2000, 2049);
+    const second = SoundEvent(SoundKind.alarm, 5000, 5049);
+    h.schedule([second, first, first]);
+    h.schedule([first, second]);
+    await h.pump(1999);
+    expect(h.player.starts, isEmpty);
+    await h.pump(1);
+    await h.pump(3000);
+    expect(h.player.starts, [
+      ('audio/threesecbeep.wav', 2000),
+      ('audio/threesecbeep.wav', 5000),
+    ]);
   });
 
-  for (final keepEnd in [false, true]) {
-    _nativeTest(
-      'cancel keepEnd=$keepEnd invalidates an in-flight failed alarm',
-      (h) async {
-        final pendingPlay = Completer<bool>();
-        h.respond = (call) =>
-            call.method == 'playAlarm' ? pendingPlay.future : true;
+  _nativeTest('only one wake timer services a long plan', (h) async {
+    final timers = <Timer>[];
+    await runZoned(
+      () async {
         h.schedule([
-          const SoundEvent(SoundKind.alarm, 0, 49),
-          const SoundEvent(SoundKind.end, 100, 100),
+          for (var at = 3000; at <= 300000; at += 3000)
+            SoundEvent(SoundKind.alarm, at, at + 49),
         ]);
+        expect(timers.where((timer) => timer.isActive), hasLength(1));
+        await h.pump(1000);
+        expect(timers.where((timer) => timer.isActive), hasLength(1));
+        h.backend.cancel();
+        expect(timers.where((timer) => timer.isActive), isEmpty);
+      },
+      zoneSpecification: ZoneSpecification(
+        createTimer: (self, parent, zone, duration, callback) {
+          expectSync(duration, lessThanOrEqualTo(const Duration(seconds: 1)));
+          final timer = parent.createTimer(zone, duration, callback);
+          timers.add(timer);
+          return timer;
+        },
+      ),
+    );
+  });
+
+  for (final jitter in [0, 1, 23, 49]) {
+    _nativeTest('planned spacing survives $jitter ms of callback jitter', (
+      h,
+    ) async {
+      h.schedule(const [
+        SoundEvent(SoundKind.alarm, 2000, 2049),
+        SoundEvent(SoundKind.alarm, 7000, 7049),
+        SoundEvent(SoundKind.alarm, 10000, 10049),
+      ]);
+      await h.pump(2000);
+      await h.pump(5000 + jitter);
+      await h.pump(3000 - jitter);
+      expect(h.player.starts.map((start) => start.$2), [
+        2000,
+        7000 + jitter,
+        10000,
+      ]);
+    });
+  }
+
+  _nativeTest('cancel clears both successful ledger and planned guard', (
+    h,
+  ) async {
+    const first = SoundEvent(SoundKind.alarm, 0, 50000);
+    h.schedule([first]);
+    await h.pump();
+    await h.pump(15000);
+    h.schedule([first]);
+    await h.pump();
+    expect(h.player.starts, hasLength(1));
+    h.schedule([const SoundEvent(SoundKind.alarm, 15000, 15049)]);
+    await h.pump();
+    h.backend.cancel();
+    h.schedule([const SoundEvent(SoundKind.alarm, 16000, 16049)]);
+    await h.pump(1000);
+    expect(h.player.starts.map((start) => start.$2), [0, 15000, 16000]);
+  });
+
+  for (final operation in [
+    'mode',
+    'release',
+    'context',
+    'source',
+    'volume',
+    'stop',
+    'resume',
+  ]) {
+    _nativeTest('$operation failure leaves the alarm retryable', (h) async {
+      var failed = false;
+      h.player.respond = (method) {
+        if (method == operation && !failed) {
+          failed = true;
+          throw StateError('unavailable');
+        }
+      };
+      h.schedule([const SoundEvent(SoundKind.alarm, 0, 49)]);
+      await h.pump();
+      expect(h.player.starts, isEmpty);
+      await h.pump(10);
+      expect(h.player.starts, [('audio/threesecbeep.wav', 10)]);
+    });
+  }
+
+  _nativeTest('failed alarms retry every 10 ms only inside the window', (
+    h,
+  ) async {
+    h.player.respond = (method) {
+      if (method == 'resume') throw StateError('unavailable');
+    };
+    h.schedule([const SoundEvent(SoundKind.alarm, 0, 49)]);
+    await h.pump();
+    for (var i = 0; i < 10; i++) {
+      await h.pump(10);
+    }
+    expect(h.player.attempts, [0, 10, 20, 30, 40]);
+    h.player.respond = (_) {};
+    h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
+    await h.pump();
+    expect(h.player.starts.single.$2, 100);
+  });
+
+  for (final late in [false, true]) {
+    _nativeTest(
+      'source preparation checks deadline before resume (late=$late)',
+      (h) async {
+        await h.backend.initialize();
+        final loading = Completer<void>();
+        h.player.respond = (method) =>
+            method == 'source' ? loading.future : null;
+        h.schedule([const SoundEvent(SoundKind.alarm, 0, 49)]);
         await h.pump();
-        expect(h.plays, [('playAlarm', 0)]);
-        h.backend.cancel(keepEnd: keepEnd);
-        pendingPlay.complete(false);
+        h.clock.nowMs = late ? 50 : 49;
+        loading.complete();
         await h.pump();
-        await h.pump(10);
-        expect(h.plays, [('playAlarm', 0)]);
-        await h.pump(90);
-        expect(h.plays, [('playAlarm', 0), if (keepEnd) ('playEnd', 100)]);
+        expect(h.player.attempts, late ? isEmpty : [49]);
       },
     );
   }
 
-  _nativeTest('overlapping schedules do not duplicate an in-flight play', (
-    h,
-  ) async {
-    final pendingPlay = Completer<bool>();
-    h.respond = (call) =>
-        call.method == 'playAlarm' ? pendingPlay.future : true;
-    const event = SoundEvent(SoundKind.alarm, 0, 49);
-    h.schedule([event]);
-    await h.pump();
-    h.schedule([event]);
-    await h.pump();
-    pendingPlay.complete(true);
-    await h.pump();
-    expect(h.plays, [('playAlarm', 0)]);
-  });
+  for (final operation in ['source', 'resume']) {
+    _nativeTest(
+      'cancel during $operation ignores the old reply in the new plan',
+      (h) async {
+        await h.backend.initialize();
+        final pending = Completer<void>();
+        h.player.respond = (method) =>
+            method == operation ? pending.future : null;
+        h.schedule([const SoundEvent(SoundKind.alarm, 0, 49)]);
+        await h.pump();
+        h.backend.cancel();
+        h.clock.nowMs = 100;
+        h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
+        h.player.respond = (_) {};
+        pending.complete();
+        await h.pump();
+        expect(h.player.starts.last.$2, 100);
+        expect(h.player.starts.length, operation == 'resume' ? 2 : 1);
+      },
+    );
+  }
 
-  _nativeTest('volume gains and awake state pass through to native unchanged', (
-    h,
-  ) async {
-    for (final gain in [0.0, 0.25, 1.0]) {
-      h.backend.setVolume(gain);
-    }
-    h.backend.keepAwake(true);
-    h.backend.keepAwake(false);
-    h.backend.unlock();
-    await h.pump();
-    expect(h.calls.map((call) => (call.method, call.arguments)), [
-      ('setVolume', 0.0),
-      ('setVolume', 0.25),
-      ('setVolume', 1.0),
-      ('keepAwake', true),
-      ('keepAwake', false),
-    ]);
-  });
-
-  _nativeTest('dispose stops playback and removes timers', (h) async {
-    h.schedule([
-      const SoundEvent(SoundKind.alarm, 100, 149),
-      const SoundEvent(SoundKind.end, 1000, 1000),
-    ]);
-    h.backend.dispose();
-    await h.pump(1000);
-    expect(h.plays, isEmpty);
-    expect(h.calls.map((call) => call.method), ['stop', 'dispose']);
-  });
   _nativeTest(
-    'native receives absolute deadlines and cancellation generations',
+    'duplicate scheduling retains an alarm awaiting its start reply',
     (h) async {
-      h.clock.nowMs = 50000;
-      h.backend.cancel();
-      h.schedule([const SoundEvent(SoundKind.alarm, 50000, 50049)]);
+      final pending = Completer<void>();
+      h.player.respond = (method) => method == 'resume' ? pending.future : null;
+      const event = SoundEvent(SoundKind.alarm, 0, 49);
+      h.schedule([event]);
       await h.pump();
-      expect(h.calls.first.arguments, {'generation': 1, 'alarmGeneration': 1});
-      expect(h.calls.last.arguments, {
-        'eventId': 'alarm:50000',
-        'plannedAtMs': 50000,
-        'generation': 1,
-        'alarmGeneration': 1,
-        'deadlineMs': 50049,
-      });
+      h.schedule([event]);
+      await h.pump();
+      expect(h.player.attempts, [0]);
+      pending.complete();
+      await h.pump();
+      h.schedule([event]);
+      await h.pump();
+      expect(h.player.attempts, [0]);
     },
   );
 
-  _nativeTest(
-    'successful starts guard planned cue times despite native latency',
-    (h) async {
-      h.respond = (call) => call.method == 'playAlarm' && h.clock.nowMs == 100
-          ? {'startedAtMs': 120}
-          : true;
-      h.schedule([
-        const SoundEvent(SoundKind.alarm, 100, 149),
-        const SoundEvent(SoundKind.alarm, 3100, 3149),
-      ]);
-      await h.pump(100);
-      await h.pump(3000);
-      expect(h.plays, [('playAlarm', 100), ('playAlarm', 3100)]);
-    },
-  );
-
-  _nativeTest('suspend rebases pending timers and skips expired cues', (
+  _nativeTest('bounded wake detects BOOTTIME jumping over expired cues', (
     h,
   ) async {
-    const events = [
+    h.schedule(const [
       SoundEvent(SoundKind.alarm, 2000, 2049),
       SoundEvent(SoundKind.alarm, 7000, 7049),
-      SoundEvent(SoundKind.end, 10000, 10000),
-    ];
-    h.schedule(events);
+      SoundEvent(SoundKind.end, 10000, null),
+    ]);
     h.clock.nowMs = 9000;
-    h.schedule(events);
-    await h.pump();
-    expect(h.plays, isEmpty);
-    expect(h.calls.last.method, 'cancelAlarm');
+    await h.tester.pump(const Duration(seconds: 1));
+    expect(h.player.starts, isEmpty);
     await h.pump(1000);
-    expect(h.plays, [('playEnd', 10000)]);
+    expect(h.player.starts, [('audio/hit.wav', 10000)]);
   });
 
-  _nativeTest('a cue still valid after suspend can start immediately', (
-    h,
-  ) async {
-    const event = SoundEvent(SoundKind.alarm, 2000, 2049);
-    h.schedule([event]);
-    h.clock.nowMs = 2040;
-    h.schedule([event]);
-    await h.pump();
-    expect(h.plays, [('playAlarm', 2040)]);
-  });
-
-  _nativeTest('late completion remains delivered for the entire workout', (
-    h,
-  ) async {
-    const event = SoundEvent(SoundKind.end, 10000, 10000);
-    h.schedule([event]);
-    h.clock.nowMs = 60000;
-    h.schedule([event]);
-    h.backend.cancel(keepEnd: true);
-    await h.pump();
-    expect(h.plays, [('playEnd', 60000)]);
-    await h.pump(20001);
-    h.schedule([event, const SoundEvent(SoundKind.end, 80000, 80000)]);
-    await h.pump();
-    expect(h.plays, [('playEnd', 60000)]);
-    h.backend.cancel();
-    h.schedule([event]);
-    await h.pump();
-    expect(h.plays, [('playEnd', 60000), ('playEnd', 80001)]);
-  });
-  for (final jitter in [0, 1, 23, 49]) {
-    _nativeTest(
-      'rest=3 preserves every planned beep with $jitter ms callback jitter',
-      (h) async {
-        final engine = TimerEngine(h.clock)
-          ..start(const WorkoutOptions(active: 5, rest: 3, sets: 2));
-        h.schedule(engine.soundsBetween(0, 300000));
-        await h.pump(2000);
-        h.clock.nowMs = 7000 + jitter;
-        h.dispatchClock.nowMs = 7000;
-        await h.tester.pump(const Duration(milliseconds: 5000));
-        h.clock.nowMs = 10000;
-        h.dispatchClock.nowMs = 10000;
-        await h.tester.pump(const Duration(milliseconds: 3000));
-        expect(h.plays, [
-          ('playAlarm', 2000),
-          ('playAlarm', 7000 + jitter),
-          ('playAlarm', 10000),
-        ]);
-      },
-    );
+  for (final at in [0, 60000]) {
+    _nativeTest('finish at $at has one chain of exactly three hits', (h) async {
+      h.clock.nowMs = at;
+      const event = SoundEvent(SoundKind.end, 0, null);
+      h.schedule([event, const SoundEvent(SoundKind.end, 1, null)]);
+      await h.pump();
+      for (var i = 0; i < 4; i++) {
+        await h.complete();
+      }
+      h.clock.nowMs += 20000;
+      h.schedule([event]);
+      await h.pump();
+      expect(h.player.starts, List.filled(3, ('audio/hit.wav', at)));
+    });
   }
 
+  _nativeTest('cancel preserves a playing finish but cancels future cues', (
+    h,
+  ) async {
+    h.schedule(const [
+      SoundEvent(SoundKind.end, 0, null),
+      SoundEvent(SoundKind.alarm, 100, 149),
+    ]);
+    await h.pump();
+    h.backend.cancel();
+    await h.pump();
+    expect(h.player.playing, isTrue);
+    await h.complete();
+    await h.complete();
+    await h.pump(100);
+    expect(
+      h.player.starts.map((start) => start.$1),
+      List.filled(3, 'audio/hit.wav'),
+    );
+  });
+
+  _nativeTest('a new cue replaces the playing finish and its remaining hits', (
+    h,
+  ) async {
+    h.schedule([const SoundEvent(SoundKind.end, 0, null)]);
+    await h.pump();
+    h.backend.cancel();
+    h.schedule([const SoundEvent(SoundKind.alarm, 100, 149)]);
+    await h.pump(100);
+    await h.complete();
+    expect(h.player.starts, [
+      ('audio/hit.wav', 0),
+      ('audio/threesecbeep.wav', 100),
+    ]);
+  });
+
   _nativeTest(
-    'Start invalidates old timers with the finish-preserving native method',
+    'failed finish waits for rescheduling, then stamps one successful chain',
     (h) async {
-      h.schedule([const SoundEvent(SoundKind.alarm, 1000, 1049)]);
-      h.backend.beginWorkout();
+      h.player.respond = (method) {
+        if (method == 'resume') throw StateError('unavailable');
+      };
+      const event = SoundEvent(SoundKind.end, 0, null);
+      h.schedule([event]);
+      await h.pump();
+      await h.pump(10000);
+      expect(h.player.attempts, [0]);
+      h.player.respond = (_) {};
+      h.schedule([event]);
+      await h.pump();
+      await h.complete();
+      await h.complete();
+      h.schedule([event]);
+      await h.pump();
+      expect(h.player.starts, List.filled(3, ('audio/hit.wav', 10000)));
+    },
+  );
+
+  _nativeTest('squared gain updates a playing finish', (h) async {
+    h.schedule([const SoundEvent(SoundKind.end, 0, null)]);
+    await h.pump();
+    h.player.calls.clear();
+    for (final percent in [0, 25, 50, 100]) {
+      h.backend.setVolume(percent);
+      await h.pump();
+    }
+    expect(
+      h.player.calls
+          .where((call) => call.$1 == 'volume')
+          .map((call) => call.$2),
+      [0.0, 0.0625, 0.25, 1.0],
+    );
+    expect(h.player.playing, isTrue);
+    expect(h.player.starts, hasLength(1));
+  });
+
+  _nativeTest(
+    'cancel stops an alarm and dispose stops finish and pending work',
+    (h) async {
+      h.schedule([const SoundEvent(SoundKind.alarm, 0, 49)]);
+      await h.pump();
+      h.backend.cancel();
+      await h.pump();
+      expect(h.player.playing, isFalse);
+      h.schedule(const [
+        SoundEvent(SoundKind.end, 0, null),
+        SoundEvent(SoundKind.alarm, 1000, 1049),
+      ]);
+      await h.pump();
+      expect(h.player.playing, isTrue);
+      h.backend.dispose();
+      h.backend.dispose();
       await h.pump(1000);
-      expect(h.plays, isEmpty);
-      expect(h.calls.single.method, 'beginWorkout');
-      expect(h.calls.single.arguments, {'generation': 1, 'alarmGeneration': 1});
+      expect(h.player.playing, isFalse);
+      expect(
+        h.player.calls.where((call) => call.$1 == 'dispose'),
+        hasLength(1),
+      );
+      expect(h.player.starts, hasLength(2));
     },
   );
 }

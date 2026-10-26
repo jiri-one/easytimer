@@ -80,13 +80,7 @@ class _EasyTimerAppState extends State<EasyTimerApp>
     debugShowCheckedModeBanner: false,
     locale: widget.locale,
     localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: const [
-      Locale('en'),
-      Locale('cs'),
-      Locale('ca'),
-      Locale('es'),
-      Locale('fr'),
-    ],
+    supportedLocales: AppLocalizations.supportedLocales,
     theme: _theme(Brightness.light),
     darkTheme: _theme(Brightness.dark),
     themeMode: widget.themeMode,
@@ -100,19 +94,19 @@ class _EasyTimerAppState extends State<EasyTimerApp>
       onPointerDown: (_) => widget.controller.platform.unlock(),
       child: child,
     ),
-    home: ListenableBuilder(
-      listenable: widget.controller,
-      builder: (context, _) => CallbackShortcuts(
+    home: ValueListenableBuilder<bool>(
+      valueListenable: widget.controller.showingTimer,
+      builder: (context, showingTimer, _) => CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.space): () {
-            if (widget.controller.showingTimer) {
+            if (widget.controller.showingTimer.value) {
               widget.controller.togglePause();
             } else {
               _settingsKey.currentState?.start();
             }
           },
           const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (widget.controller.showingTimer) widget.controller.stop();
+            if (widget.controller.showingTimer.value) widget.controller.stop();
           },
           const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
               widget.controller.stepVolume(5),
@@ -122,15 +116,15 @@ class _EasyTimerAppState extends State<EasyTimerApp>
         child: Focus(
           autofocus: true,
           child: PopScope(
-            canPop: !widget.controller.showingTimer,
+            canPop: !showingTimer,
             onPopInvokedWithResult: (didPop, result) {
-              if (!didPop && widget.controller.showingTimer) {
+              if (!didPop && widget.controller.showingTimer.value) {
                 widget.controller.stop();
               }
             },
             child: Scaffold(
               body: SafeArea(
-                child: widget.controller.showingTimer
+                child: showingTimer
                     ? TimerScreen(controller: widget.controller)
                     : SettingsScreen(
                         key: _settingsKey,

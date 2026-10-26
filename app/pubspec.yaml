@@ -7,6 +7,7 @@ environment:
   sdk: ^3.13.5
 
 dependencies:
+  audioplayers: '>=6.8.1 <6.9.0'
   ffi: ^2.2.0
   flutter:
     sdk: flutter
@@ -16,9 +17,11 @@ dependencies:
   shared_preferences: ^2.5.6
   # Avoid an unused JNI library in the Linux bundle.
   shared_preferences_android: '>=2.4.28 <2.5.0'
+  wakelock_plus: ^1.8.2
   web: ^1.1.1
 
 dev_dependencies:
+  dbus: ^0.8.0
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter

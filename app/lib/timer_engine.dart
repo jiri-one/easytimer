@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'clock.dart';
+import 'constants.dart';
 
 export 'clock.dart';
 
@@ -16,15 +17,25 @@ class WorkoutOptions {
     return int.tryParse(text);
   }
 
+  factory WorkoutOptions.normalized(int? active, int? rest, int? sets) {
+    int value(int? number, int fallback) =>
+        number != null && number >= 0 && number <= 9999 ? number : fallback;
+    return WorkoutOptions(
+      active: math.max(5, value(active, 45)),
+      rest: value(rest, 15),
+      sets: value(sets, 0),
+    );
+  }
+
   factory WorkoutOptions.fromText(
     String active,
     String rest,
     String sets, {
     WorkoutOptions fallback = const WorkoutOptions(),
-  }) => WorkoutOptions(
-    active: math.max(5, parse(active) ?? fallback.active),
-    rest: math.max(0, parse(rest) ?? fallback.rest),
-    sets: math.max(0, parse(sets) ?? 0),
+  }) => WorkoutOptions.normalized(
+    parse(active) ?? fallback.active,
+    parse(rest) ?? fallback.rest,
+    parse(sets),
   );
 }
 
@@ -49,6 +60,13 @@ class TimerSnapshot {
       seconds == other.seconds;
 }
 
+const stoppedSnapshot = TimerSnapshot(
+  TimerMode.stopped,
+  TimerPhase.prepare,
+  0,
+  prepareMs,
+);
+
 class PhaseSpan {
   const PhaseSpan(this.phase, this.set, this.startMs, this.endMs);
 
@@ -60,25 +78,16 @@ class PhaseSpan {
 
 enum SoundKind { alarm, end }
 
+typedef CueId = (SoundKind, int);
+
 class SoundEvent {
-  const SoundEvent(this.kind, this.atMs, this.deadlineMs);
+  const SoundEvent(this.kind, this.atMs, this.deadlineMs)
+    : id = (kind, kind == SoundKind.end ? 0 : atMs);
 
   final SoundKind kind;
   final int atMs;
-  final int deadlineMs;
-
-  String get id => '${kind.name}:$atMs';
-}
-
-class AlarmGate {
-  int? _lastSuccessCueMs;
-
-  bool allows(int cueMs) =>
-      _lastSuccessCueMs == null || cueMs - _lastSuccessCueMs! >= 3000;
-
-  void succeeded(int cueMs) => _lastSuccessCueMs = cueMs;
-
-  void reset() => _lastSuccessCueMs = null;
+  final int? deadlineMs;
+  final CueId id;
 }
 
 class TimerEngine {
@@ -87,13 +96,14 @@ class TimerEngine {
   final MonotonicClock clock;
   WorkoutOptions options = const WorkoutOptions();
   TimerMode _mode = TimerMode.stopped;
-  PhaseSpan _anchor = const PhaseSpan(TimerPhase.prepare, 0, 0, 5000);
+  PhaseSpan _anchor = const PhaseSpan(TimerPhase.prepare, 0, 0, prepareMs);
   TimerSnapshot? _paused;
 
   void start(WorkoutOptions value) {
     assert(value.active >= 5 && value.rest >= 0 && value.sets >= 0);
     options = value;
-    _anchor = PhaseSpan(TimerPhase.prepare, 0, clock.nowMs, clock.nowMs + 5000);
+    final now = clock.nowMs;
+    _anchor = PhaseSpan(TimerPhase.prepare, 0, now, now + prepareMs);
     _paused = null;
     _mode = TimerMode.running;
   }
@@ -132,17 +142,14 @@ class TimerEngine {
         : PhaseSpan(TimerPhase.rest, set, activeEnd, start + cycle);
   }
 
-  TimerSnapshot get snapshot {
+  TimerSnapshot get snapshot => snapshotAt(clock.nowMs);
+
+  TimerSnapshot snapshotAt(int nowMs) {
     if (_mode == TimerMode.paused) return _paused!;
     if (_mode == TimerMode.stopped) {
-      return const TimerSnapshot(
-        TimerMode.stopped,
-        TimerPhase.prepare,
-        0,
-        5000,
-      );
+      return stoppedSnapshot;
     }
-    final phase = phaseAt(clock.nowMs);
+    final phase = phaseAt(nowMs);
     if (phase == null) {
       return TimerSnapshot(
         TimerMode.complete,
@@ -155,7 +162,7 @@ class TimerEngine {
       TimerMode.running,
       phase.phase,
       phase.set,
-      math.max(0, phase.endMs - clock.nowMs),
+      math.max(0, phase.endMs - nowMs),
     );
   }
 
@@ -175,11 +182,12 @@ class TimerEngine {
     if (_mode != TimerMode.paused) return;
     final value = _paused!;
     final active = value.phase == TimerPhase.active;
+    final now = clock.nowMs;
     _anchor = PhaseSpan(
       active ? TimerPhase.active : TimerPhase.prepare,
       value.set,
-      clock.nowMs,
-      clock.nowMs + (active ? value.remainingMs : 5000),
+      now,
+      now + (active ? value.remainingMs : prepareMs),
     );
     _mode = TimerMode.running;
     _paused = null;
@@ -202,15 +210,15 @@ class TimerEngine {
         final at = span.endMs - span.startMs <= 3049
             ? span.startMs
             : span.endMs - 3000;
-        if (at >= fromMs && at <= throughMs) {
+        if (span.endMs - 2951 >= fromMs && at <= throughMs) {
           events.add(SoundEvent(SoundKind.alarm, at, span.endMs - 2951));
         }
       }
       cursor = span.endMs;
     }
     final end = completionMs;
-    if (end != null && end >= fromMs && end <= throughMs) {
-      events.add(SoundEvent(SoundKind.end, end, end));
+    if (end != null && end <= throughMs) {
+      events.add(SoundEvent(SoundKind.end, end, null));
     }
     return events;
   }

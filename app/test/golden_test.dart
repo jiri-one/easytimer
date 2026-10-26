@@ -1,45 +1,16 @@
 import 'package:easytimer/app.dart';
-import 'package:easytimer/platform/timer_platform.dart';
-import 'package:easytimer/settings.dart';
 import 'package:easytimer/timer_engine.dart';
 import 'package:easytimer/ui/controls.dart';
-import 'package:easytimer/workout_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-class _Clock implements MonotonicClock {
-  @override
-  int nowMs = 0;
-}
-
-class _SilentPlatform extends TimerPlatform {
-  @override
-  Future<void> initialize() async {}
-  @override
-  void unlock() {}
-  @override
-  void schedule(List<SoundEvent> events, MonotonicClock clock) {}
-  @override
-  void cancel({bool keepEnd = false}) {}
-  @override
-  void setVolume(double gain) {}
-  @override
-  void keepAwake(bool enabled) {}
-  @override
-  void dispose() {}
-}
+import 'test_support.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() async {
-    final font = FontLoader('DroidSansMono')
-      ..addFont(rootBundle.load('assets/fonts/DroidSansMono.ttf'));
-    await font.load();
-  });
+  setUpAll(loadAppFont);
 
   final sizes = [
     ('phone_150', const Size(824, 1648), 1.5),
@@ -60,18 +31,15 @@ void main() {
     String locale = 'en',
     bool dark = false,
     bool paused = false,
-    double volume = 1,
+    int volume = 100,
     bool showControls = false,
   }) async {
     tester.view.devicePixelRatio = dpr;
     tester.view.physicalSize = size;
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    SharedPreferences.setMockInitialValues({'volume': volume});
-    final clock = _Clock();
-    final controller = WorkoutController(
-      await TimerSettings.load(),
-      _SilentPlatform(),
+    final clock = FakeClock();
+    final controller = await createTestController(
+      tester,
+      preferences: {'volumePercent': volume},
       clock: clock,
     );
     if (timer) {
@@ -109,7 +77,6 @@ void main() {
     } finally {
       controller.stop();
       await tester.pumpWidget(const SizedBox());
-      controller.dispose();
     }
   }
 
@@ -139,7 +106,7 @@ void main() {
         timer: true,
         time: 5000,
         dark: dark,
-        volume: .6,
+        volume: 60,
       );
     });
   }

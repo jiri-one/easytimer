@@ -1,177 +1,210 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 
+import '../constants.dart';
+import '../cue_policy.dart';
 import '../timer_engine.dart';
 import 'timer_platform.dart';
 
-class _PendingSound {
-  _PendingSound(this.event);
-
-  final SoundEvent event;
-  Timer? timer;
-}
-
 class PlatformBackend extends TimerPlatform {
-  PlatformBackend({MonotonicClock? dispatchClock})
-    : _dispatchClock = dispatchClock ?? StopwatchClock();
+  PlatformBackend({AudioPlayer? player})
+    : _player = player ?? (AudioPlayer()..positionUpdater = null) {
+    _completion = _player.onPlayerComplete.listen(
+      (_) => _completed(),
+      onError: (Object _) {
+        _playing = null;
+        _endRemaining = 0;
+      },
+    );
+  }
 
-  static const _channel = MethodChannel('easytimer/platform');
-  final MonotonicClock _dispatchClock;
-  final _pending = <String, _PendingSound>{};
-  final _handled = <String, int>{};
-  final _gate = AlarmGate();
-  bool _endHandled = false;
-  int? _clockOffset;
-  int _generation = 0;
-  int _alarmGeneration = 0;
+  final AudioPlayer _player;
+  final _policy = CuePolicy();
+  final _pending = <CueId, SoundEvent>{};
+  late final StreamSubscription<void> _completion;
+  Future<void> _operations = Future.value();
+  Future<void>? _initialization;
+  MonotonicClock? _clock;
+  Timer? _timer;
+  SoundEvent? _inFlight;
+  SoundEvent? _playing;
+  int _revision = 0;
+  int _endRemaining = 0;
+  double _gain = 1;
+  bool _initialized = false;
+  bool _disposed = false;
 
-  Map<String, int> get _generations => {
-    'generation': _generation,
-    'alarmGeneration': _alarmGeneration,
-  };
+  Future<void> _serial(Future<void> Function() operation) {
+    final result = _operations.then((_) => operation());
+    _operations = result.catchError((Object _) {});
+    return result;
+  }
 
   @override
-  Future<void> initialize() async {
-    final assets = await Future.wait([
-      rootBundle.load('assets/audio/threesecbeep.wav'),
-      rootBundle.load('assets/audio/hit.wav'),
-    ]);
-    await _invoke('initialize', {
-      'alarm': assets[0].buffer.asUint8List(),
-      'end': assets[1].buffer.asUint8List(),
-    });
-  }
-
-  Future<Object?> _invoke(String method, [Object? arguments]) async {
-    try {
-      return await _channel.invokeMethod<Object?>(method, arguments);
-    } on PlatformException {
-      return null;
-    } on MissingPluginException {
-      return null;
-    }
-  }
+  Future<void> initialize() => _initialization ??=
+      _serial(() async {
+        if (_disposed) return;
+        // SoundPool has no completion events for the three finish hits.
+        await _player.setPlayerMode(PlayerMode.mediaPlayer);
+        await _player.setReleaseMode(ReleaseMode.stop);
+        await _player.setAudioContext(
+          AudioContext(
+            android: const AudioContextAndroid(
+              usageType: AndroidUsageType.media,
+              contentType: AndroidContentType.sonification,
+              audioFocus: AndroidAudioFocus.none,
+            ),
+          ),
+        );
+        await _player.setSource(AssetSource(alarmAsset.substring(7)));
+        await _player.setVolume(_gain);
+        _initialized = true;
+      }).catchError((Object _) {
+        _initialization = null;
+      });
 
   @override
   void unlock() {}
 
   @override
   void schedule(List<SoundEvent> events, MonotonicClock clock) {
-    final now = clock.nowMs;
-    final offset = now - _dispatchClock.nowMs;
-    if (_clockOffset != null && (offset - _clockOffset!).abs() > 25) {
-      // Dart timers exclude suspend, so their remaining delays are now stale.
-      _alarmGeneration++;
-      _pending.removeWhere((_, pending) {
-        if (pending.event.kind == SoundKind.end && pending.timer == null) {
-          return false;
-        }
-        pending.timer?.cancel();
-        return true;
-      });
-      unawaited(_invoke('cancelAlarm', _generations));
-    }
-    _clockOffset = offset;
-    _handled.removeWhere((_, at) => at < now - 10000);
+    if (_disposed) return;
+    _clock = clock;
     for (final event in events) {
-      if (_pending.containsKey(event.id) ||
-          _handled.containsKey(event.id) ||
-          (event.kind == SoundKind.end && _endHandled)) {
-        continue;
+      if (_policy.allows(event, clock.nowMs)) {
+        _pending.putIfAbsent(event.id, () => event);
       }
-      if (event.kind == SoundKind.alarm && now > event.deadlineMs) continue;
-      _arm(event, clock, _generation);
+    }
+    _wake();
+  }
+
+  void _wake() {
+    _timer?.cancel();
+    _timer = null;
+    if (_disposed || _clock == null) return;
+    final now = _clock!.nowMs;
+    _pending.removeWhere(
+      (_, event) => !identical(event, _inFlight) && !_policy.allows(event, now),
+    );
+    final plan = _pending.values.toList()
+      ..sort((a, b) => a.atMs.compareTo(b.atMs));
+    if (_inFlight == null && plan.isNotEmpty && plan.first.atMs <= now) {
+      unawaited(_start(plan.first, _clock!, _revision));
+    }
+    _arm();
+  }
+
+  void _arm([int minimumDelay = 0]) {
+    _timer?.cancel();
+    _timer = null;
+    if (_disposed || _pending.isEmpty) return;
+    final firstAt = _pending.values
+        .map((event) => event.atMs)
+        .reduce((a, b) => a < b ? a : b);
+    // Re-read BOOTTIME after suspend instead of trusting a long Dart timer.
+    final delay = _inFlight == null
+        ? (firstAt - _clock!.nowMs).clamp(minimumDelay, 1000)
+        : 1000;
+    _timer = Timer(Duration(milliseconds: delay), _wake);
+  }
+
+  Future<void> _start(
+    SoundEvent event,
+    MonotonicClock clock,
+    int revision,
+  ) async {
+    _inFlight = event;
+    bool current() => !_disposed && revision == _revision;
+    try {
+      await initialize();
+      if (!_initialized || !current()) return;
+      await _serial(() async {
+        if (!current() || !_policy.allows(event, clock.nowMs)) return;
+        _playing = null;
+        _endRemaining = 0;
+        await _player.stop();
+        if (!current()) return;
+        final asset = event.kind == SoundKind.alarm ? alarmAsset : endAsset;
+        await _player.setSource(AssetSource(asset.substring(7)));
+        // Loading can outlive an alarm's window or a cancelled plan.
+        if (!current() || !_policy.allows(event, clock.nowMs)) return;
+        _playing = event;
+        _endRemaining = event.kind == SoundKind.end ? 2 : 0;
+        await _player.resume();
+        if (current()) _policy.started(event, clock.nowMs);
+      });
+    } catch (_) {
+      if (identical(_playing, event)) {
+        _playing = null;
+        _endRemaining = 0;
+      }
+    } finally {
+      if (current() &&
+          (event.kind == SoundKind.end ||
+              _policy.handled(event) ||
+              _policy.expired(event, clock.nowMs))) {
+        _pending.remove(event.id);
+      }
+      _inFlight = null;
+      _arm(current() && !_policy.handled(event) ? 10 : 0);
     }
   }
 
-  void _arm(SoundEvent event, MonotonicClock clock, int generation) {
-    final alarmGeneration = _alarmGeneration;
-    bool cancelled() =>
-        generation != _generation ||
-        (event.kind == SoundKind.alarm && alarmGeneration != _alarmGeneration);
-    final pending = _PendingSound(event);
-    _pending[event.id] = pending;
-    final delay = (event.atMs - clock.nowMs).clamp(0, 300000);
-    pending.timer = Timer(Duration(milliseconds: delay), () async {
-      pending.timer = null;
-      if (cancelled()) return;
-      final now = clock.nowMs;
-      if (event.kind == SoundKind.alarm && now > event.deadlineMs) {
-        _handled[event.id] = event.atMs;
-        _pending.remove(event.id);
-        return;
-      }
-      Object? result;
-      if (event.kind == SoundKind.end || _gate.allows(event.atMs)) {
-        if (event.kind == SoundKind.end) _endHandled = true;
-        result = await _invoke(
-          event.kind == SoundKind.alarm ? 'playAlarm' : 'playEnd',
-          {
-            ..._generations,
-            'eventId': event.id,
-            'plannedAtMs': event.atMs,
-            'deadlineMs': event.deadlineMs,
-          },
-        );
-      }
-      if (cancelled()) return;
-      final startedAt = result is Map ? result['startedAtMs'] : null;
-      if (startedAt is int || event.kind == SoundKind.end) {
-        _handled[event.id] = event.atMs;
-        _pending.remove(event.id);
-        if (startedAt is int && event.kind == SoundKind.alarm) {
-          _gate.succeeded(event.atMs);
-        }
-      } else if (clock.nowMs < event.deadlineMs) {
-        // Only successful starts consume the planned cue's duplicate guard.
-        pending.timer = Timer(const Duration(milliseconds: 10), () {
-          _pending.remove(event.id);
-          if (!cancelled()) _arm(event, clock, generation);
-        });
-      } else {
-        _pending.remove(event.id);
-      }
-    });
-  }
-
-  @override
-  void beginWorkout() => _cancel(begin: true);
-
-  @override
-  void cancel({bool keepEnd = false}) => _cancel(keepEnd: keepEnd);
-
-  void _cancel({bool keepEnd = false, bool begin = false}) {
-    _alarmGeneration++;
-    if (!keepEnd) _generation++;
-    _pending.removeWhere((_, pending) {
-      if (keepEnd && pending.event.kind == SoundKind.end) return false;
-      pending.timer?.cancel();
-      return true;
-    });
-    if (!keepEnd) {
-      _handled.clear();
-      _endHandled = false;
-      _clockOffset = null;
+  void _completed() {
+    final event = _playing;
+    if (event == null) return;
+    if (event.kind != SoundKind.end || _endRemaining == 0) {
+      _playing = null;
+      return;
     }
-    _gate.reset();
+    _endRemaining--;
     unawaited(
-      _invoke(
-        begin ? 'beginWorkout' : (keepEnd ? 'cancelAlarm' : 'stop'),
-        _generations,
-      ),
+      _serial(() async {
+        if (_disposed || !identical(_playing, event)) return;
+        try {
+          await _player.resume();
+        } catch (_) {
+          if (identical(_playing, event)) {
+            _playing = null;
+            _endRemaining = 0;
+          }
+        }
+      }),
     );
   }
 
   @override
-  void setVolume(double gain) => unawaited(_invoke('setVolume', gain));
+  void cancel() {
+    _revision++;
+    _timer?.cancel();
+    _timer = null;
+    _pending.clear();
+    _policy.reset();
+    if (_playing?.kind != SoundKind.end) {
+      _playing = null;
+      _endRemaining = 0;
+      unawaited(_serial(_player.stop));
+    }
+  }
 
   @override
-  void keepAwake(bool enabled) => unawaited(_invoke('keepAwake', enabled));
+  void setVolume(int percent) {
+    if (_disposed) return;
+    final linear = percent / 100;
+    _gain = linear * linear;
+    unawaited(_serial(() => _player.setVolume(_gain)));
+  }
 
   @override
   void dispose() {
+    if (_disposed) return;
     cancel();
-    unawaited(_invoke('dispose'));
+    _disposed = true;
+    _playing = null;
+    _endRemaining = 0;
+    unawaited(_completion.cancel());
+    keepAwake(false);
+    unawaited(_serial(_player.dispose));
   }
 }

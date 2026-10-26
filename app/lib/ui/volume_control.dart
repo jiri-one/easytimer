@@ -7,13 +7,15 @@ class VolumeControl extends StatefulWidget {
   const VolumeControl({
     super.key,
     required this.label,
-    required this.value,
+    required this.percent,
     required this.onChanged,
+    required this.onStep,
   });
 
   final String label;
-  final double value;
-  final ValueChanged<double> onChanged;
+  final int percent;
+  final ValueChanged<int> onChanged;
+  final ValueChanged<int> onStep;
 
   @override
   State<VolumeControl> createState() => _VolumeControlState();
@@ -21,10 +23,6 @@ class VolumeControl extends StatefulWidget {
 
 class _VolumeControlState extends State<VolumeControl> {
   final _focus = FocusNode(debugLabel: 'Volume');
-
-  void _step(int percent) => widget.onChanged(
-    ((widget.value * 100).round() + percent).clamp(0, 100) / 100,
-  );
 
   @override
   void dispose() {
@@ -36,10 +34,9 @@ class _VolumeControlState extends State<VolumeControl> {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       void position(Offset local) {
-        final fraction = (1 - (local.dy - 16) / (constraints.maxHeight - 32))
-            .clamp(0, 1);
+        final fraction = 1 - (local.dy - 16) / (constraints.maxHeight - 32);
         _focus.requestFocus();
-        widget.onChanged((fraction * 100).round() / 100);
+        widget.onChanged((fraction * 100).round());
       }
 
       return Semantics(
@@ -48,24 +45,25 @@ class _VolumeControlState extends State<VolumeControl> {
         focusable: true,
         focused: _focus.hasFocus,
         onFocus: _focus.requestFocus,
-        value: '${(widget.value * 100).round()}%',
-        increasedValue: '${((widget.value + .05).clamp(0, 1) * 100).round()}%',
-        decreasedValue: '${((widget.value - .05).clamp(0, 1) * 100).round()}%',
-        onIncrease: () => _step(5),
-        onDecrease: () => _step(-5),
+        value: '${widget.percent}%',
+        increasedValue: '${widget.percent > 95 ? 100 : widget.percent + 5}%',
+        decreasedValue: '${widget.percent < 5 ? 0 : widget.percent - 5}%',
+        onIncrease: () => widget.onStep(5),
+        onDecrease: () => widget.onStep(-5),
         child: Focus(
           focusNode: _focus,
           includeSemantics: false,
           onFocusChange: (_) => setState(() {}),
           onKeyEvent: (_, event) {
             final delta = switch (event.logicalKey) {
-              LogicalKeyboardKey.arrowUp || LogicalKeyboardKey.arrowRight => 5,
-              LogicalKeyboardKey.arrowDown ||
+              LogicalKeyboardKey.arrowRight => 5,
               LogicalKeyboardKey.arrowLeft => -5,
               _ => null,
             };
             if (delta == null) return KeyEventResult.ignored;
-            if (event is KeyDownEvent || event is KeyRepeatEvent) _step(delta);
+            if (event is KeyDownEvent || event is KeyRepeatEvent) {
+              widget.onStep(delta);
+            }
             return KeyEventResult.handled;
           },
           child: MouseRegion(
@@ -82,7 +80,7 @@ class _VolumeControlState extends State<VolumeControl> {
                 child: CustomPaint(
                   size: constraints.biggest,
                   painter: _VolumePainter(
-                    widget.value,
+                    widget.percent / 100,
                     Theme.of(context).brightness == Brightness.dark,
                   ),
                 ),

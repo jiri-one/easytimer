@@ -1,145 +1,217 @@
+import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
-@JS('eval')
-external JSAny? _evaluate(JSString source);
+import 'package:easytimer/timer_engine.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:web/web.dart' as web;
 
-void script(String source) => _evaluate(source.toJS);
+@JS('Object.getOwnPropertyDescriptor')
+external JSObject? _descriptor(JSObject object, JSString key);
 
-double number(String source) =>
-    (_evaluate(source.toJS) as JSNumber).toDartDouble;
+@JS('Object.defineProperty')
+external void _define(JSObject object, JSString key, JSObject descriptor);
 
-bool boolean(String source) => (_evaluate(source.toJS) as JSBoolean).toDart;
-
-List<double> numbers(String source) =>
-    (_evaluate(source.toJS) as JSArray<JSNumber>).toDart
-        .map((value) => value.toDartDouble)
-        .toList();
+@JS('Reflect.deleteProperty')
+external void _delete(JSObject object, JSString key);
 
 Future<void> flushBrowserPromises() async {
   await Future<void>.delayed(Duration.zero);
   await Future<void>.delayed(Duration.zero);
 }
 
-void installBrowserFixture() => script(r'''
-(() => {
-  const originalContext = globalThis.AudioContext;
-  const originalWake = Object.getOwnPropertyDescriptor(navigator, 'wakeLock');
-  const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
-  const fixture = globalThis.timerFixture = {
-    starts: [], nodes: [], played: [], buffers: [], attempts: 0, failStarts: 0,
-    failAttempt: -1, resumeCalls: 0, holdResume: false, failResume: false,
-    wakeRequests: [], locks: [], visibility: 'visible',
-    state(value) {
-      this.context.state = value;
-      this.context.onstatechange?.(new Event('statechange'));
-    },
-    visible(value) {
-      this.visibility = value;
-      document.dispatchEvent(new Event('visibilitychange'));
-    },
-    advance(time, deliverEnded = true) {
-      if (this.context.state !== 'running') throw new Error('Audio is suspended');
-      this.context.currentTime = time;
-      for (const node of this.nodes) {
-        if (node.when === null || node.ended || node.disconnected) continue;
-        const until = Math.min(node.when + node.buffer.duration, node.stopAt);
-        if (!node.rendered && time > node.when && until > node.when) {
-          node.rendered = true;
-          this.played.push(node);
-        }
-        if (deliverEnded && time >= until) {
-          node.ended = true;
-          node.onended?.(new Event('ended'));
-        }
+class BrowserFixture {
+  final _originalContext = globalContext.getProperty<JSAny?>(
+    'AudioContext'.toJS,
+  );
+  final _originalVisibility = _descriptor(web.document, 'visibilityState'.toJS);
+  late final context = FakeAudioContext(this);
+  final gain = FakeGain();
+  final starts = <FakeSource>[];
+  final nodes = <FakeSource>[];
+  final played = <FakeSource>[];
+  final buffers = <FakeBuffer>[];
+  var visibility = 'visible';
+  var resumeCalls = 0;
+  var holdResume = false;
+  var failResume = false;
+  Completer<JSAny?>? _resume;
+
+  void install() {
+    globalContext.setProperty(
+      'AudioContext'.toJS,
+      ((JSAny? options) => context.js).toJS,
+    );
+    _define(
+      web.document,
+      'visibilityState'.toJS,
+      JSObject()
+        ..setProperty('configurable'.toJS, true.toJS)
+        ..setProperty('get'.toJS, (() => visibility.toJS).toJS),
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler('flutter/assets', (_) async => ByteData(1));
+  }
+
+  List<double> get startTimes => [for (final node in starts) node.when!];
+  List<double> get liveStarts => [
+    for (final node in starts)
+      if (!node.disconnected) node.when!,
+  ];
+
+  void state(String value) {
+    context.state = value;
+    context.onstatechange?.callAsFunction(null, web.Event('statechange'));
+  }
+
+  void visible(String value) {
+    visibility = value;
+    web.document.dispatchEvent(web.Event('visibilitychange'));
+  }
+
+  void resolveResume() {
+    state('running');
+    _resume!.complete(null);
+    _resume = null;
+  }
+
+  void advance(double time, {bool deliverEnded = true}) {
+    if (context.state != 'running') throw StateError('Audio is suspended');
+    context.currentTime = time;
+    for (final node in nodes) {
+      if (node.when == null || node.ended || node.disconnected) continue;
+      final until = math.min(node.when! + node.buffer.duration, node.stopAt);
+      if (!node.rendered && time > node.when! && until > node.when!) {
+        node.rendered = true;
+        played.add(node);
       }
-    },
-    resolveWake(index, holdRelease = false, failRelease = false) {
-      const lock = {
-        released: false, releaseCalls: 0,
-        release() {
-          this.releaseCalls++;
-          if (failRelease) return Promise.reject(new Error('release failed'));
-          if (holdRelease) return new Promise((resolve, reject) => {
-            this.finishRelease = () => { this.released = true; resolve(); };
-            this.failRelease = reject;
-          });
-          this.released = true;
-          return Promise.resolve();
-        }
-      };
-      this.locks[index] = lock;
-      this.wakeRequests[index].resolve(lock);
-    },
-    restore() {
-      globalThis.AudioContext = originalContext;
-      if (originalWake) Object.defineProperty(navigator, 'wakeLock', originalWake);
-      else delete navigator.wakeLock;
-      if (originalVisibility) Object.defineProperty(document, 'visibilityState', originalVisibility);
-      else delete document.visibilityState;
-      delete globalThis.timerFixture;
+      if (deliverEnded && time >= until) {
+        node.ended = true;
+        node.onended?.callAsFunction(null, web.Event('ended'));
+      }
     }
-  };
-  Object.defineProperty(document, 'visibilityState', {
-    configurable: true, get() { return fixture.visibility; }
-  });
-  Object.defineProperty(navigator, 'wakeLock', {
-    configurable: true,
-    value: { request(type) {
-      if (type !== 'screen') throw new Error('Unexpected wake lock type');
-      return new Promise((resolve, reject) => fixture.wakeRequests.push({resolve, reject}));
-    } }
-  });
-  globalThis.AudioContext = class {
-    constructor() {
-      fixture.context = this;
-      this.state = 'running';
-      this.currentTime = 0;
-      this.destination = {};
-      this.decoded = 0;
+  }
+
+  void restore() {
+    globalContext.setProperty('AudioContext'.toJS, _originalContext);
+    final original = _originalVisibility;
+    if (original == null) {
+      _delete(web.document, 'visibilityState'.toJS);
+    } else {
+      _define(web.document, 'visibilityState'.toJS, original);
     }
-    createGain() {
-      return fixture.gain = {gain: {value: 1}, connect() {}};
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler('flutter/assets', null);
+  }
+}
+
+class FakeAudioContext {
+  FakeAudioContext(this.fixture);
+
+  final BrowserFixture fixture;
+  late final js = createJSInteropWrapper(this);
+  @JSExport()
+  String state = 'running';
+  @JSExport()
+  double currentTime = 0;
+  @JSExport()
+  final JSObject destination = JSObject();
+  @JSExport()
+  JSFunction? onstatechange;
+
+  @JSExport()
+  JSObject createGain() => fixture.gain.js;
+
+  @JSExport()
+  JSPromise<JSObject> decodeAudioData(JSArrayBuffer data) {
+    final buffer = fixture.buffers.isEmpty
+        ? FakeBuffer(SoundKind.alarm, 3.2)
+        : FakeBuffer(SoundKind.end, 0.25);
+    fixture.buffers.add(buffer);
+    return Future.value(buffer.js).toJS;
+  }
+
+  @JSExport()
+  JSObject createBufferSource() {
+    final node = FakeSource(fixture);
+    fixture.nodes.add(node);
+    return node.js;
+  }
+
+  @JSExport()
+  JSPromise<JSAny?> resume() {
+    fixture.resumeCalls++;
+    if (fixture.failResume) {
+      return Future<JSAny?>.error(StateError('gesture required')).toJS;
     }
-    decodeAudioData() {
-      const buffer = ++this.decoded === 1
-        ? {kind: 'alarm', duration: 3.2}
-        : {kind: 'end', duration: 0.25};
-      fixture.buffers.push(buffer);
-      return Promise.resolve(buffer);
+    if (fixture.holdResume) {
+      fixture._resume ??= Completer<JSAny?>();
+      return fixture._resume!.future.toJS;
     }
-    createBufferSource() {
-      const node = {
-        buffer: null, when: null, stopAt: Infinity, rendered: false,
-        disconnected: false, ended: false, onended: null,
-        connect(gain) { this.gain = gain; },
-        disconnect() { this.disconnected = true; },
-        start(time) {
-          fixture.attempts++;
-          if (fixture.failStarts > 0 || fixture.failAttempt === fixture.attempts) {
-            fixture.failStarts = Math.max(0, fixture.failStarts - 1);
-            throw new Error('start failed');
-          }
-          this.when = time;
-          fixture.starts.push(this);
-        },
-        stop(time = fixture.context.currentTime) {
-          if (this.when === null) throw new Error('not started');
-          this.stopAt = time;
-        }
-      };
-      fixture.nodes.push(node);
-      return node;
-    }
-    resume() {
-      fixture.resumeCalls++;
-      if (fixture.failResume) return Promise.reject(new Error('gesture required'));
-      if (fixture.holdResume) return new Promise(resolve => {
-        fixture.resolveResume = () => { fixture.state('running'); resolve(); };
-      });
-      fixture.state('running');
-      return Promise.resolve();
-    }
-    close() { this.state = 'closed'; return Promise.resolve(); }
-  };
-})();
-''');
+    fixture.state('running');
+    return Future<JSAny?>.value(null).toJS;
+  }
+
+  @JSExport()
+  JSPromise<JSAny?> close() {
+    state = 'closed';
+    return Future<JSAny?>.value(null).toJS;
+  }
+}
+
+class FakeBuffer {
+  FakeBuffer(this.kind, this.duration);
+
+  final SoundKind kind;
+  @JSExport()
+  double duration;
+  late final js = createJSInteropWrapper(this);
+}
+
+class FakeGain {
+  late final js = createJSInteropWrapper(this);
+  @JSExport()
+  final gain = JSObject()..setProperty('value'.toJS, 1.toJS);
+  @JSExport()
+  void connect(JSObject destination) {}
+
+  double get value => gain.getProperty<JSNumber>('value'.toJS).toDartDouble;
+}
+
+class FakeSource {
+  FakeSource(this.fixture);
+
+  final BrowserFixture fixture;
+  late final js = createJSInteropWrapper(this);
+  late FakeBuffer buffer;
+  JSObject? connectedTo;
+  double? when;
+  double stopAt = double.infinity;
+  bool rendered = false;
+  bool disconnected = false;
+  bool ended = false;
+  @JSExport()
+  JSFunction? onended;
+
+  @JSExport('buffer')
+  set jsBuffer(JSObject value) {
+    buffer = fixture.buffers.firstWhere((buffer) => buffer.js == value);
+  }
+
+  @JSExport()
+  void connect(JSObject gain) => connectedTo = gain;
+
+  @JSExport()
+  void disconnect() => disconnected = true;
+
+  @JSExport()
+  void start(double time) {
+    when = time;
+    fixture.starts.add(this);
+  }
+
+  @JSExport()
+  void stop([double? time]) => stopAt = time ?? fixture.context.currentTime;
+}

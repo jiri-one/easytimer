@@ -6,53 +6,42 @@ import 'platform/timer_platform.dart';
 import 'settings.dart';
 import 'timer_engine.dart';
 
-class WorkoutController extends ChangeNotifier {
+class WorkoutController {
   WorkoutController(this.settings, this.platform, {MonotonicClock? clock})
     : engine = TimerEngine(clock ?? createWorkoutClock()),
-      volumeState = ValueNotifier(settings.volume) {
-    platform.setVolume(volume * volume);
-    platform.onVisibilityChanged = refresh;
+      volume = ValueNotifier(settings.volumePercent) {
+    platform.setVolume(volume.value);
   }
 
   final TimerSettings settings;
   final TimerPlatform platform;
   final TimerEngine engine;
-  final ValueNotifier<double> volumeState;
+  final showingTimer = ValueNotifier(false);
+  final display = ValueNotifier(stoppedSnapshot);
+  final ValueNotifier<int> volume;
   Timer? _update;
-  bool showingTimer = false;
-  TimerSnapshot _display = const TimerSnapshot(
-    TimerMode.stopped,
-    TimerPhase.prepare,
-    0,
-    5000,
-  );
-
-  TimerSnapshot get display => _display;
-  double get volume => settings.volume;
-
-  void stepVolume(int percent) =>
-      changeVolume((settings.volumePercent + percent).clamp(0, 100) / 100);
+  Timer? _volumeSave;
 
   void start(WorkoutOptions options) {
     platform.unlock();
-    platform.beginWorkout();
+    platform.cancel();
     unawaited(settings.saveOptions(options));
     engine.start(options);
-    showingTimer = true;
+    showingTimer.value = true;
     platform.keepAwake(true);
-    refresh(force: true);
+    refresh();
   }
 
   void togglePause() {
-    if (!showingTimer) return;
+    if (!showingTimer.value) return;
     if (engine.snapshot.mode == TimerMode.running) {
       engine.pause();
       platform.cancel();
-    } else if (engine.snapshot.mode == TimerMode.paused) {
+    } else {
       platform.unlock();
       engine.resume();
     }
-    refresh(force: true);
+    refresh();
   }
 
   void stop() {
@@ -60,54 +49,52 @@ class WorkoutController extends ChangeNotifier {
     _update?.cancel();
     platform.cancel();
     platform.keepAwake(false);
-    showingTimer = false;
-    notifyListeners();
+    showingTimer.value = false;
+    display.value = stoppedSnapshot;
   }
 
-  void changeVolume(double value) {
-    final next = value.isFinite
-        ? (value * 100).round().clamp(0, 100) / 100
-        : 1.0;
-    if (next == volume) return;
-    unawaited(settings.saveVolume(next));
-    platform.setVolume(next * next);
-    volumeState.value = next;
+  void stepVolume(int percent) => changeVolume(volume.value + percent);
+
+  void changeVolume(int percent) {
+    final next = percent.clamp(0, 100);
+    if (next == volume.value) return;
+    volume.value = next;
+    settings.volumePercent = next;
+    platform.setVolume(next);
+    _volumeSave?.cancel();
+    _volumeSave = Timer(const Duration(milliseconds: 250), () {
+      unawaited(settings.saveVolume(volume.value));
+    });
   }
 
-  void refresh({bool force = false}) {
+  void refresh() {
     _update?.cancel();
-    if (!showingTimer) return;
+    if (!showingTimer.value) return;
     final now = engine.clock.nowMs;
-    final next = engine.snapshot;
+    final next = engine.snapshotAt(now);
     if (next.mode != TimerMode.paused) {
-      platform.schedule(
-        engine.soundsBetween(now - 49, now + 300000),
-        engine.clock,
-      );
+      platform.schedule(engine.soundsBetween(now, now + 300000), engine.clock);
     }
+    if (!next.sameDisplay(display.value)) display.value = next;
     if (next.mode == TimerMode.complete) {
-      final end = engine.completionMs!;
-      platform.schedule([SoundEvent(SoundKind.end, end, end)], engine.clock);
-      platform.cancel(keepEnd: true);
       platform.keepAwake(false);
-      showingTimer = false;
-    }
-    final changed = !next.sameDisplay(_display);
-    _display = next;
-    if (changed || force) notifyListeners();
-    if (next.mode == TimerMode.running) {
+      showingTimer.value = false;
+    } else if (next.mode == TimerMode.running) {
       final delay = next.remainingMs - (next.seconds - 1) * 1000;
       _update = Timer(Duration(milliseconds: delay.clamp(1, 1000)), refresh);
     }
   }
 
-  @override
   void dispose() {
     _update?.cancel();
-    platform.onVisibilityChanged = null;
+    if (_volumeSave?.isActive ?? false) {
+      _volumeSave!.cancel();
+      unawaited(settings.saveVolume(volume.value));
+    }
     platform.keepAwake(false);
     platform.dispose();
-    volumeState.dispose();
-    super.dispose();
+    showingTimer.dispose();
+    display.dispose();
+    volume.dispose();
   }
 }

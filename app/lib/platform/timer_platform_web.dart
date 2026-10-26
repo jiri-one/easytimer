@@ -5,20 +5,30 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
 
+import '../constants.dart';
+import '../cue_policy.dart';
 import '../timer_engine.dart';
 import 'timer_platform.dart';
 
 class _ScheduledSound {
-  _ScheduledSound(this.workout, this.event, this.nodes, this.when, this.until);
+  _ScheduledSound(
+    this.revision,
+    this.event,
+    this.nodes,
+    this.startMs,
+    this.when,
+    this.until,
+  );
 
-  final int workout;
+  final int revision;
   final SoundEvent event;
   final List<web.AudioBufferSourceNode> nodes;
+  final int startMs;
   final double when;
   double until;
   bool played = false;
 
-  (int, String) get key => (workout, event.id);
+  (int, CueId) get key => (revision, event.id);
 }
 
 class PlatformBackend extends TimerPlatform {
@@ -27,22 +37,14 @@ class PlatformBackend extends TimerPlatform {
   late final web.AudioBuffer _alarm;
   late final web.AudioBuffer _end;
   late final JSFunction _visibility;
-  final _sources = <(int, String), _ScheduledSound>{};
-  final _pending = <String, SoundEvent>{};
-  final _played = <String>{};
-  int _workout = 0;
-  bool _endPlayed = false;
-  int? _lastAlarmAtMs;
+  final _sources = <(int, CueId), _ScheduledSound>{};
+  final _pending = <CueId, SoundEvent>{};
+  final _policy = CuePolicy();
+  int _revision = 0;
   MonotonicClock? _clock;
   double? _clockOffsetMs;
-  web.WakeLockSentinel? _wakeLock;
-  bool _awake = false;
+  bool _ready = false;
   bool _disposed = false;
-  bool _acquiringWakeLock = false;
-  int _wakeGeneration = 0;
-  int _wakeAttempt = -1;
-  Timer? _retry;
-  SoundKind? _retryKind;
 
   @override
   Future<void> initialize() async {
@@ -50,28 +52,17 @@ class PlatformBackend extends TimerPlatform {
       web.AudioContextOptions(latencyHint: 'interactive'.toJS),
     );
     _gain = _context.createGain()..connect(_context.destination);
-    final buffers = await Future.wait([
-      _decode('assets/audio/threesecbeep.wav'),
-      _decode('assets/audio/hit.wav'),
-    ]);
-    _alarm = buffers[0];
-    _end = buffers[1];
-    _context.onstatechange = ((web.Event event) {
-      _reconcile(rebase: true);
-    }).toJS;
+    _context.onstatechange = ((web.Event event) => _reconcile()).toJS;
     _visibility = ((web.Event event) {
-      if (web.document.visibilityState == 'visible') {
-        unawaited(_resume());
-        if (_awake) {
-          _wakeGeneration++;
-          unawaited(_acquireWakeLock());
-        }
-      } else {
-        _reconcile(rebase: true);
-      }
-      onVisibilityChanged?.call();
+      if (web.document.visibilityState == 'visible') unawaited(_resume());
     }).toJS;
     web.document.addEventListener('visibilitychange', _visibility);
+    final buffers = await Future.wait([_decode(alarmAsset), _decode(endAsset)]);
+    if (_disposed) return;
+    _alarm = buffers[0];
+    _end = buffers[1];
+    _ready = true;
+    _reconcile();
   }
 
   Future<web.AudioBuffer> _decode(String path) async {
@@ -85,17 +76,18 @@ class PlatformBackend extends TimerPlatform {
 
   @override
   void unlock() {
-    // This call must stay in the Start/Space event's synchronous call stack.
+    // Browser authorization belongs to the input gesture's synchronous stack.
     if (!_disposed) unawaited(_resume());
   }
 
   Future<void> _resume() async {
+    final revision = _revision;
     try {
-      _reconcile(rebase: true);
+      _reconcile();
       await _context.resume().toDart;
-      _reconcile(rebase: true);
+      if (revision == _revision) _reconcile();
     } catch (_) {
-      // A browser can require another user gesture after an interruption.
+      // An interruption can require another user gesture.
     }
   }
 
@@ -104,30 +96,20 @@ class PlatformBackend extends TimerPlatform {
     if (_disposed) return;
     _clock = clock;
     for (final event in events) {
-      if (!_played.contains(event.id) &&
-          !(event.kind == SoundKind.end && _endPlayed)) {
-        _pending[event.id] = event;
-      }
+      if (!_policy.handled(event)) _pending[event.id] = event;
     }
     _reconcile();
   }
 
   void _recordPlayback(_ScheduledSound sound, double audioNow) {
-    // Queued nodes can be stopped before rendering a single sample.
-    if (audioNow <= sound.when || sound.until <= sound.when) return;
-    sound.played = true;
-    // A previous finish may still be audible during the new workout's prepare.
-    if (sound.workout != _workout) return;
-    if (!_played.add(sound.event.id)) return;
-    _pending.remove(sound.event.id);
-    if (sound.event.kind == SoundKind.end) {
-      _endPlayed = true;
-    } else {
-      _lastAlarmAtMs = math.max(
-        _lastAlarmAtMs ?? sound.event.atMs,
-        sound.event.atMs,
-      );
+    // A queued source can be interrupted before rendering any samples.
+    if (sound.played || audioNow <= sound.when || sound.until <= sound.when) {
+      return;
     }
+    sound.played = true;
+    if (sound.revision != _revision) return;
+    _policy.started(sound.event, sound.startMs);
+    _pending.remove(sound.event.id);
   }
 
   void _removeSound(_ScheduledSound sound, {bool stop = false}) {
@@ -139,19 +121,15 @@ class PlatformBackend extends TimerPlatform {
     }
   }
 
-  void _reconcile({bool rebase = false}) {
+  void _reconcile() {
     final clock = _clock;
-    if (_disposed || clock == null) return;
-    _retry?.cancel();
-    _retry = null;
-    _retryKind = null;
+    if (_disposed || !_ready || clock == null) return;
     final now = clock.nowMs;
     final audioNow = _context.currentTime;
     final running = _context.state == 'running';
     final offset = audioNow * 1000 - now;
-    // Audio rendering is quantized, but a paused context can drift by seconds.
-    rebase =
-        rebase ||
+    // Render quantization is small; a suspended context can drift by seconds.
+    final rebase =
         !running ||
         _clockOffsetMs == null ||
         (offset - _clockOffsetMs!).abs() > 20;
@@ -165,15 +143,10 @@ class PlatformBackend extends TimerPlatform {
     }
     if (rebase) _clockOffsetMs = running ? offset : null;
     _pending.removeWhere((id, event) {
-      final discard =
-          _played.contains(id) ||
-          (event.kind == SoundKind.end && _endPlayed) ||
-          (event.kind == SoundKind.alarm && now > event.deadlineMs);
+      final discard = _policy.handled(event) || _policy.expired(event, now);
       if (discard) {
-        final sound = _sources[(_workout, id)];
-        if (sound != null && !_played.contains(id)) {
-          _removeSound(sound, stop: true);
-        }
+        final sound = _sources[(_revision, id)];
+        if (sound != null && !sound.played) _removeSound(sound, stop: true);
       }
       return discard;
     });
@@ -181,67 +154,40 @@ class PlatformBackend extends TimerPlatform {
 
     final events = _pending.values.toList()
       ..sort((a, b) => a.atMs.compareTo(b.atMs));
-    var lastAlarm = _lastAlarmAtMs;
-    for (final event in events) {
-      final existing = _sources[(_workout, event.id)];
-      if (existing != null) {
-        if (event.kind == SoundKind.alarm) lastAlarm = event.atMs;
-        continue;
-      }
-      // Delivery jitter must not suppress the next three-second rest cue.
-      if (event.kind == SoundKind.alarm &&
-          lastAlarm != null &&
-          event.atMs < lastAlarm + 3000) {
-        continue;
-      }
+    for (final event in _policy.select(events, now)) {
+      if (_sources.containsKey((_revision, event.id))) continue;
       final startMs = math.max(now, event.atMs);
       final when = audioNow + (startMs - now) / 1000;
       final buffer = event.kind == SoundKind.alarm ? _alarm : _end;
       final repeats = event.kind == SoundKind.end ? 3 : 1;
-      final nodes = <web.AudioBufferSourceNode>[];
-      try {
-        for (var index = 0; index < repeats; index++) {
-          final source = _context.createBufferSource()..buffer = buffer;
-          nodes.add(source);
-          source.connect(_gain);
-          source.start(when + index * buffer.duration);
+      final nodes = List.generate(repeats, (index) {
+        return _context.createBufferSource()
+          ..buffer = buffer
+          ..connect(_gain)
+          ..start(when + index * buffer.duration);
+      });
+      final sound = _ScheduledSound(
+        _revision,
+        event,
+        nodes,
+        startMs,
+        when,
+        when + buffer.duration * repeats,
+      );
+      // A later cue replaces an overlapping sound on the single audio stream.
+      for (final other in _sources.values) {
+        if (other.when <= when && other.until > when) {
+          _cutOff(other, when);
+        } else if (other.when > when && other.when < sound.until) {
+          _cutOff(sound, other.when);
         }
-        final sound = _ScheduledSound(
-          _workout,
-          event,
-          nodes,
-          when,
-          when + buffer.duration * repeats,
-        );
-        // SoundPool has one stream: a later cue replaces any overlapping sound.
-        for (final other in _sources.values) {
-          if (other.when <= when && other.until > when) {
-            _cutOff(other, when);
-          } else if (other.when > when && other.when < sound.until) {
-            _cutOff(sound, other.when);
-          }
-        }
-        _sources[sound.key] = sound;
-        nodes.last.onended = ((web.Event event) {
-          if (!identical(_sources[sound.key], sound)) return;
-          _recordPlayback(sound, _context.currentTime);
-          _removeSound(sound);
-        }).toJS;
-        if (event.kind == SoundKind.alarm) lastAlarm = event.atMs;
-      } catch (_) {
-        for (final source in nodes) {
-          // start() may have failed before the node became stoppable.
-          try {
-            source.stop();
-          } catch (_) {}
-          source.disconnect();
-        }
-        if (now <= event.deadlineMs && event.atMs - now <= 49) {
-          _retryKind = event.kind;
-          _retry = Timer(const Duration(milliseconds: 10), _reconcile);
-        }
-        return;
       }
+      _sources[sound.key] = sound;
+      nodes.last.onended = ((web.Event event) {
+        if (!identical(_sources[sound.key], sound)) return;
+        _recordPlayback(sound, _context.currentTime);
+        _removeSound(sound);
+      }).toJS;
     }
   }
 
@@ -253,93 +199,37 @@ class PlatformBackend extends TimerPlatform {
   }
 
   @override
-  void beginWorkout() => _cancel(preservePlayingEnd: true);
-
-  @override
-  void cancel({bool keepEnd = false}) => _cancel(keepEnd: keepEnd);
-
-  void _cancel({bool keepEnd = false, bool preservePlayingEnd = false}) {
-    if (!keepEnd || _retryKind != SoundKind.end) {
-      _retry?.cancel();
-      _retry = null;
-      _retryKind = null;
-    }
+  void cancel() {
     final audioNow = _context.currentTime;
     for (final sound in _sources.values.toList()) {
       _recordPlayback(sound, audioNow);
-      if (sound.event.kind == SoundKind.end &&
-          (keepEnd ||
-              (preservePlayingEnd && sound.played && audioNow < sound.until))) {
-        continue;
+      if (sound.event.kind != SoundKind.end ||
+          !sound.played ||
+          audioNow >= sound.until) {
+        _removeSound(sound, stop: true);
       }
-      _removeSound(sound, stop: true);
     }
-    if (keepEnd) {
-      _pending.removeWhere((_, event) => event.kind == SoundKind.alarm);
-    } else {
-      _pending.clear();
-      _played.clear();
-      _workout++;
-      _endPlayed = false;
-      _lastAlarmAtMs = null;
-      _clock = null;
-      _clockOffsetMs = null;
-    }
+    _pending.clear();
+    _policy.reset();
+    _revision++;
+    _clock = null;
+    _clockOffsetMs = null;
   }
 
   @override
-  void setVolume(double gain) => _gain.gain.value = gain;
-
-  @override
-  void keepAwake(bool enabled) {
-    _awake = enabled;
-    _wakeGeneration++;
-    if (enabled) {
-      unawaited(_acquireWakeLock());
-    } else {
-      final lock = _wakeLock;
-      _wakeLock = null;
-      if (lock != null) {
-        unawaited(lock.release().toDart.catchError((Object _) => null));
-      }
-    }
-  }
-
-  Future<void> _acquireWakeLock() async {
-    if (_disposed ||
-        !_awake ||
-        _acquiringWakeLock ||
-        _wakeAttempt == _wakeGeneration ||
-        web.document.visibilityState != 'visible' ||
-        _wakeLock?.released == false) {
-      return;
-    }
-    _acquiringWakeLock = true;
-    final generation = _wakeGeneration;
-    // A denial must wait for a new Start or visibility event, not spin retries.
-    _wakeAttempt = generation;
-    try {
-      final lock = await web.window.navigator.wakeLock.request('screen').toDart;
-      if (!_disposed &&
-          _awake &&
-          generation == _wakeGeneration &&
-          web.document.visibilityState == 'visible') {
-        _wakeLock = lock;
-      } else {
-        await lock.release().toDart;
-      }
-    } catch (_) {
-      // Browsers may deny wake locks for power saving or an insecure origin.
-    } finally {
-      _acquiringWakeLock = false;
-      unawaited(_acquireWakeLock());
-    }
+  void setVolume(int percent) {
+    final volume = percent / 100;
+    _gain.gain.value = volume * volume;
   }
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     cancel();
+    for (final sound in _sources.values.toList()) {
+      _removeSound(sound, stop: true);
+    }
     keepAwake(false);
     _context.onstatechange = null;
     web.document.removeEventListener('visibilitychange', _visibility);
