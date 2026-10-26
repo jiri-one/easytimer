@@ -130,6 +130,7 @@ class FakeAudioPlayer implements AudioPlayer {
   final calls = <(String, Object?)>[];
   final List<(SoundKind, int)> starts;
   final attempts = <int>[];
+  final _completions = StreamController<void>.broadcast();
   final void Function()? onStart;
   Duration position = Duration.zero;
   FutureOr<void> Function(String) respond = (_) {};
@@ -139,8 +140,16 @@ class FakeAudioPlayer implements AudioPlayer {
   PlayerState state = PlayerState.stopped;
   @override
   double volume = 1;
+  @override
+  Stream<void> get onPlayerComplete => _completions.stream;
 
   bool get playing => state == PlayerState.playing;
+
+  void complete() {
+    state = PlayerState.completed;
+    position = const Duration(seconds: 30);
+    _completions.add(null);
+  }
 
   SoundKind get currentKind {
     final value = source;
@@ -198,6 +207,12 @@ class FakeAudioPlayer implements AudioPlayer {
   }
 
   @override
+  Future<void> pause() async {
+    await _call('pause');
+    state = PlayerState.paused;
+  }
+
+  @override
   Future<void> stop() async {
     await _call('stop');
     state = PlayerState.stopped;
@@ -214,6 +229,7 @@ class FakeAudioPlayer implements AudioPlayer {
     await _call('dispose');
     state = PlayerState.disposed;
     source = null;
+    await _completions.close();
   }
 
   @override

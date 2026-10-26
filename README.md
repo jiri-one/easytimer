@@ -83,8 +83,13 @@ second or state changes, with a separate volume subscription.
 `workout_controller.dart` connects the engine to preferences and the platform
 backends. Timing, cue policy and playback coordination are Dart. The finish WAV's
 PCM samples are tripled at load time so the three hits play as one continuous
-buffer. Native playback preloads one `audioplayers` player per cue kind and reuses
-its source with seek and resume. Linux reuses stable `audio/alarm.wav` and `audio/end.wav` files in the application's
+buffer. Native playback preloads one `audioplayers` player per cue kind and rewinds
+it after completion or Stop, so a ready cue only needs resume. A cue waits for
+any rewind still in progress. Android silently primes each player once during
+initialization, then pauses and rewinds it before restoring the current volume.
+The media context requests no audio focus, including during priming. Device mixer
+latency remains outside the app's control.
+Linux reuses stable `audio/alarm.wav` and `audio/end.wav` files in the application's
 cache directory. Files are published atomically and recreated after eviction.
 The original bundled WAV files are unchanged. The web backend decodes the same buffers into
 Web Audio and uses a GainNode, scheduling five minutes ahead and topping up on

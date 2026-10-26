@@ -75,6 +75,9 @@ class PlatformBackend extends TimerPlatform {
   final _policy = CuePolicy();
   final _sources = <SoundKind, _CachedBytesSource>{};
   final _prepared = <SoundKind>{};
+  final _primed = <SoundKind>{};
+  final _rewound = <AudioPlayer>{};
+  final _rewinds = <AudioPlayer, Future<void>>{};
   final _stops = <Future<void>>{};
   Future<void>? _initialization;
   Future<void>? _volumeUpdate;
@@ -96,22 +99,39 @@ class PlatformBackend extends TimerPlatform {
           }
         }
         for (final entry in _players.entries) {
-          if (_prepared.contains(entry.key)) continue;
           final player = entry.value;
-          // SoundPool does not report reliable completion, so state goes stale.
-          await player.setPlayerMode(PlayerMode.mediaPlayer);
-          await player.setReleaseMode(ReleaseMode.stop);
-          await player.setAudioContext(
-            AudioContext(
-              android: const AudioContextAndroid(
-                usageType: AndroidUsageType.media,
-                contentType: AndroidContentType.sonification,
-                audioFocus: AndroidAudioFocus.none,
+          if (!_prepared.contains(entry.key)) {
+            // SoundPool does not report reliable completion, so state goes stale.
+            await player.setPlayerMode(PlayerMode.mediaPlayer);
+            await player.setReleaseMode(ReleaseMode.stop);
+            await player.setAudioContext(
+              AudioContext(
+                android: const AudioContextAndroid(
+                  usageType: AndroidUsageType.media,
+                  contentType: AndroidContentType.sonification,
+                  audioFocus: AndroidAudioFocus.none,
+                ),
               ),
-            ),
-          );
-          await player.setSource(_sources[entry.key]!);
-          _prepared.add(entry.key);
+            );
+            await player.setSource(_sources[entry.key]!);
+            player.onPlayerComplete.listen((_) {
+              _rewound.remove(player);
+              unawaited(_rewind(player).catchError((Object _) {}));
+            }, onError: (Object _) {});
+            _prepared.add(entry.key);
+          }
+          if (defaultTargetPlatform == TargetPlatform.android &&
+              !_primed.contains(entry.key)) {
+            // Android allocates its AudioTrack on first start; warm it silently.
+            await player.setVolume(0);
+            try {
+              await player.resume();
+            } finally {
+              await player.pause();
+            }
+            _primed.add(entry.key);
+          }
+          await _rewind(player);
         }
         await _applyVolume();
         _initialized = true;
@@ -168,8 +188,9 @@ class PlatformBackend extends TimerPlatform {
         if (!current()) return;
       }
       _playing = null;
-      await player.seek(Duration.zero);
+      await _rewind(player);
       if (!current()) return;
+      _rewound.remove(player);
       _resuming = event.kind;
       await player.resume();
       if (!current()) {
@@ -196,9 +217,24 @@ class PlatformBackend extends TimerPlatform {
   }
 
   Future<void> _stop(AudioPlayer player) {
-    final stop = player.stop();
+    _rewound.remove(player);
+    final stop = player.stop().then((_) {
+      unawaited(_rewind(player).catchError((Object _) {}));
+    });
     _stops.add(stop);
     return stop.whenComplete(() => _stops.remove(stop));
+  }
+
+  Future<void> _rewind(AudioPlayer player) {
+    if (_rewound.contains(player)) return Future.value();
+    return _rewinds[player] ??= () async {
+      try {
+        await player.seek(Duration.zero);
+        _rewound.add(player);
+      } finally {
+        _rewinds.remove(player);
+      }
+    }();
   }
 
   @override
