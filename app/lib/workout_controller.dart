@@ -8,7 +8,7 @@ import 'timer_engine.dart';
 
 class WorkoutController extends ChangeNotifier {
   WorkoutController(this.settings, this.platform, {MonotonicClock? clock})
-    : engine = TimerEngine(clock ?? StopwatchClock()) {
+    : engine = TimerEngine(clock ?? createWorkoutClock()) {
     platform.setVolume(volume * volume);
     platform.onVisibilityChanged = refresh;
   }

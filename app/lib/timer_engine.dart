@@ -1,15 +1,8 @@
 import 'dart:math' as math;
 
-abstract interface class MonotonicClock {
-  int get nowMs;
-}
+import 'clock.dart';
 
-class StopwatchClock implements MonotonicClock {
-  final Stopwatch _watch = Stopwatch()..start();
-
-  @override
-  int get nowMs => _watch.elapsedMilliseconds;
-}
+export 'clock.dart';
 
 class WorkoutOptions {
   const WorkoutOptions({this.active = 45, this.rest = 15, this.sets = 0});
@@ -78,14 +71,14 @@ class SoundEvent {
 }
 
 class AlarmGate {
-  int? _lastSuccessMs;
+  int? _lastSuccessCueMs;
 
-  bool allows(int nowMs) =>
-      _lastSuccessMs == null || nowMs - _lastSuccessMs! >= 3000;
+  bool allows(int cueMs) =>
+      _lastSuccessCueMs == null || cueMs - _lastSuccessCueMs! >= 3000;
 
-  void succeeded(int nowMs) => _lastSuccessMs = nowMs;
+  void succeeded(int cueMs) => _lastSuccessCueMs = cueMs;
 
-  void reset() => _lastSuccessMs = null;
+  void reset() => _lastSuccessCueMs = null;
 }
 
 class TimerEngine {
