@@ -12,17 +12,18 @@
   <description>
     <p>
       EasyTimer is an offline interval timer for workouts, stretching and focused work.
-      Arrange timed activities and rest periods into routines and follow them with
-      a clear countdown and short sound cues.
+      Set an active duration, a rest duration and a number of sets, then follow
+      the countdown with short sound cues. Zero sets repeats indefinitely.
     </p>
     <p xml:lang="cs">
       EasyTimer je intervalový časovač pro cvičení, protahování a soustředěnou práci.
-      Sestavte si plán aktivit a přestávek a sledujte přehledný odpočet se zvukovými
-      upozorněními. Funguje bez připojení k internetu.
+      Nastavte délku aktivity, délku odpočinku a počet setů a sledujte přehledný
+      odpočet se zvukovými upozorněními. Nula setů znamená neomezené opakování.
+      Funguje bez připojení k internetu.
     </p>
     <p>
       The application code is licensed under GPL-3.0-only. Sounds and translations
-      from Interval Timer by Matthew Nienow are licensed under MIT.
+      from Interval Timer by Matthew Nienow and contributors are licensed under MIT.
       The bundled Droid Sans Mono font is licensed under Apache-2.0.
     </p>
   </description>

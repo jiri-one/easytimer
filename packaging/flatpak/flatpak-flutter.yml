@@ -37,7 +37,7 @@ modules:
       - install -Dm644 ../LICENSE /app/share/licenses/one.jiri.easytimer/LICENSE
       - install -Dm644 ../NOTICE /app/share/licenses/one.jiri.easytimer/NOTICE
       - install -Dm644 ../packaging/licenses/interval-timer-MIT.txt /app/share/licenses/one.jiri.easytimer/interval-timer-MIT.txt
-      - install -Dm644 assets/licenses/DroidSansMono-Apache-2.0.txt /app/share/licenses/one.jiri.easytimer/DroidSansMono-Apache-2.0.txt
+      - install -Dm644 assets/licenses/*.txt /app/share/licenses/one.jiri.easytimer/
       - install -Dm644 /var/lib/flutter/LICENSE /app/share/licenses/one.jiri.easytimer/flutter-LICENSE
     sources:
       - type: git

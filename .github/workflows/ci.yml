@@ -25,8 +25,12 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
       - run: flutter pub get --enforce-lockfile
+      - run: flutter gen-l10n
+      - run: git diff --exit-code -- lib/l10n/
       - run: flutter analyze
       - run: flutter test
+      - run: flutter test --platform chrome test/web_platform_test.dart
+      - run: python3 -m unittest discover -s test/tool -p '*_test.py'
       - run: ./tool/build_web.sh
 
   linux:
@@ -34,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libpulse-dev
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libpulse-dev
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -43,6 +47,7 @@ jobs:
         run: flutter pub get --enforce-lockfile
       - working-directory: app
         run: flutter build linux --release --no-pub
+      - run: app/test/native/linux/run.sh
 
   android:
     name: Debug APK
@@ -61,6 +66,8 @@ jobs:
         run: flutter pub get --enforce-lockfile
       - working-directory: app
         run: flutter build apk --debug --no-pub
+      - working-directory: app
+        run: python3 test/native/android/run.py
 
   packaging:
     name: Desktop metadata and icons

@@ -12,9 +12,9 @@
 The app ID is `one.jiri.easytimer`, the executable and Dart package are `easytimer`,
 and the display name is EasyTimer. The application code is GPL-3.0-only. The sounds
 and translations reused from [Interval Timer](https://github.com/randombits-dev/interval-timer)
-are MIT-licensed, copyright 2023 Matthew Nienow. AppStream therefore declares
+are MIT-licensed, copyright 2023 Matthew Nienow and contributors. AppStream therefore declares
 `GPL-3.0-only AND MIT AND Apache-2.0`; its metadata is dedicated to CC0-1.0. Keep the upstream notice
-with redistributed assets. Droid Sans Mono is bundled under Apache-2.0. Android includes it as a native asset, and web, tarball
+with redistributed assets. Droid Sans Mono is bundled under Apache-2.0. Android includes it as a bundled asset, and web, tarball
 and Flatpak packaging include a copy. In-app attribution should name the upstream
 project and expose its licence too.
 
@@ -40,12 +40,17 @@ adaptive and monochrome launchers, web and maskable icons, the favicon, the stor
 icon, and Linux PNGs from 16 to 512 pixels. The full-size rendered icon is
 `packaging/linux/icons/hicolor/512x512/apps/one.jiri.easytimer.png`.
 
-Linux audio uses the app's custom native method-channel backend, which loads
-`libpulse-simple.so.0` at runtime and sends sound cues through PulseAudio. It has
-no GStreamer dependency and needs no PulseAudio build headers. The Freedesktop
-Flatpak runtime supplies the library; `--socket=pulseaudio` permits playback on
-PulseAudio and PipeWire hosts. No network or host filesystem permission is granted.
-Exercise sound cues in the final sandbox before submission.
+Android uses SoundPool on the media stream without requesting audio focus.
+Linux uses a custom method-channel backend with the asynchronous PulseAudio API,
+loading `libpulse.so.0` at runtime. Building it requires libpulse development
+headers (`libpulse-dev` on Debian/Ubuntu); it has no GStreamer dependency.
+The browser uses Web Audio with bundled decoded WAVs and a GainNode.
+The Freedesktop Flatpak runtime supplies libpulse; `--socket=pulseaudio` permits
+playback on PulseAudio and PipeWire hosts. No network or host filesystem
+permission is granted. Screen inhibition uses GTK and its portal in Flatpak;
+unsandboxed desktop builds fall back to `org.freedesktop.ScreenSaver` if GTK
+cannot inhibit. No extra Flatpak `--talk-name` permission is required.
+Exercise sound cues and screen inhibition in the final sandbox before submission.
 
 ## CI and releases
 
@@ -119,7 +124,7 @@ keyPassword=your-key-password
 
 Relative `storeFile` paths are resolved from `app/android/`. The equivalent
 environment variables are `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`,
-`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`; a nonempty property takes
+`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`; a nonblank property takes
 precedence over its environment variable. Partial settings and a nonexistent
 keystore fail. Without any settings, local non-tag release builds warn and use
 the existing Android debug key. `GITHUB_REF_TYPE=tag`, a `GITHUB_REF` beginning
@@ -139,8 +144,9 @@ SDKs before submitting to F-Droid.
 The web script uses `flutter build web --release --base-href /` with JavaScript
 and locally bundled CanvasKit and Droid Sans Mono. The same font aliases are used
 by native and web builds, including Flutter's default Roboto family. JavaScript
-is the conservative production build; the Web Audio backend also supports Wasm. A Wasm build also has a JavaScript
-fallback, but requires Wasm-compatible dependencies; multithreaded Wasm rendering
+is the conservative production build; `app/tool/build_web.sh --wasm` keeps the
+Skwasm renderer and Web Audio backend. A Wasm build also has a JavaScript fallback,
+but requires Wasm-compatible dependencies; multithreaded Wasm rendering
 requires cross-origin-isolation headers. See
 [Flutter's Wasm documentation](https://docs.flutter.dev/platform-integration/web/wasm).
 The manifest uses EasyTimer, standalone display and both regular and maskable icons.
@@ -181,7 +187,7 @@ The manifest follows EasyDict: Freedesktop **26.08**, **llvm22** and Flutter
 other sources so that the actual build runs without network access. The app has
 Wayland, fallback X11, IPC, DRI and PulseAudio access; it has no network access.
 The Flatpak includes root `NOTICE`, the GPL and MIT texts, the Droid Sans Mono
-Apache-2.0 licence and Flutter's licence under
+and speaker-vector Apache-2.0 licences and Flutter's licence under
 `/app/share/licenses/one.jiri.easytimer/`.
 
 For the same local-commit build used by CI, first have the Freedesktop Platform,
