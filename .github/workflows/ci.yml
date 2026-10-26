@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,8 +13,8 @@ env:
   FLUTTER_VERSION: 3.47.7
 
 jobs:
-  app:
-    name: Analyze, test and web
+  tests:
+    name: Analyze and test
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -24,30 +25,67 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
       - run: flutter pub get --enforce-lockfile
       - run: flutter gen-l10n
       - run: git diff --exit-code -- lib/l10n/
       - run: flutter analyze
       - run: flutter test
-      - run: flutter test --platform chrome test/web_platform_test.dart
-      - run: python3 -m unittest discover -s test/tool -p '*_test.py'
-      - run: ./tool/build_web.sh
+      - run: flutter test --platform chrome test/web_platform_test.dart test/platform_parity_browser_test.dart
+      - run: dbus-run-session -- sh -c 'EASYTIMER_PRIVATE_DBUS="$DBUS_SESSION_BUS_ADDRESS" flutter test --no-pub test/wakelock_linux_test.dart'
+
+  app:
+    name: Web app
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - working-directory: app
+        run: flutter pub get --enforce-lockfile
+      - working-directory: app
+        run: ./tool/build_web.sh
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b
+        with:
+          path: app/build/web
+
+  deploy:
+    name: GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [tests, app]
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
+        id: deployment
 
   linux:
     name: Linux
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libpulse-dev
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
       - working-directory: app
         run: flutter pub get --enforce-lockfile
       - working-directory: app
         run: flutter build linux --release --no-pub
-      - run: app/test/native/linux/run.sh
 
   android:
     name: Debug APK
@@ -58,16 +96,16 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
       - working-directory: app
         run: flutter pub get --enforce-lockfile
       - working-directory: app
         run: flutter build apk --debug --no-pub
-      - working-directory: app
-        run: python3 test/native/android/run.py
 
   packaging:
     name: Desktop metadata and icons
@@ -80,7 +118,3 @@ jobs:
       - run: ./branding/generate.sh
       # Rasterization varies between the librsvg versions shipped by distributions.
       - run: git diff --exit-code -- '*.svg' '*.xml'
-
-  flatpak:
-    name: Flatpak
-    uses: ./.github/workflows/flatpak.yml

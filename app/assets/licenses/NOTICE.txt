@@ -66,4 +66,25 @@ https://github.com/google/material-design-icons/tree/40ef0f297970f0e78bf87569f43
 https://github.com/google/material-design-icons/blob/40ef0f297970f0e78bf87569f43ea90ec53d571c/LICENSE
 
 EasyTimer's GPL-3.0-only text is bundled in app/assets/licenses/EasyTimer-GPL-3.0.txt.
-Flutter and dependency notices are generated separately by Flutter's build.
+
+Flutter and plugins
+-------------------
+Flutter generates the SDK and package licence collection as NOTICES (web) or
+NOTICES.Z (native) in the Flutter asset bundle. It includes the platform
+implementations and transitive dependencies of these plugins:
+
+  audioplayers 6.8.1
+    Copyright (c) 2017 Blue Fire
+    License: MIT
+    https://github.com/bluefireteam/audioplayers
+    Native audio playback; Linux uses audioplayers_linux 4.3.0 and GStreamer.
+
+  wakelock_plus 1.8.2
+    Copyright (c) 2020-2023, creativecreatorormaybenot
+    License: BSD-3-Clause
+    https://github.com/fluttercommunity/wakelock_plus
+    Screen wake lock; Linux uses the desktop Inhibit portal.
+
+Package versions and source checksums are recorded in app/pubspec.lock.
+The custom licence texts and this notice are shipped once from
+app/assets/licenses/; packaging retains those bundled copies.

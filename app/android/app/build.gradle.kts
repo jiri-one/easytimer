@@ -60,8 +60,6 @@ android {
         includeInBundle = false
     }
 
-    sourceSets.getByName("main").assets.srcDir(rootProject.file("../../packaging/licenses"))
-
     signingConfigs {
         if (hasReleaseKey) {
             create("release") {

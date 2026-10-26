@@ -22,8 +22,15 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: aarch64, flutter_arch: arm64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libpulse-dev
-      - name: Flutter SDK
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        if: matrix.flutter_arch == 'x64'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Flutter SDK for ARM
+        if: matrix.flutter_arch == 'arm64'
         # The git checkout works on ARM, where Flutter has no SDK archive.
         run: |
           git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
@@ -42,8 +49,6 @@ jobs:
           mkdir "$name"
           cp -r "build/linux/$FLUTTER_ARCH/release/bundle/." "$name/"
           cp ../packaging/linux/one.jiri.easytimer.{desktop,svg,metainfo.xml} "$name/"
-          cp ../LICENSE "$name/"
-          cp -r ../packaging/licenses "$name/"
           tar czf "$name.tar.gz" "$name"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -60,10 +65,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
       - name: Signing key
         working-directory: app/android
         env:
@@ -112,6 +119,7 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
       - working-directory: app
         run: flutter pub get --enforce-lockfile
       - working-directory: app

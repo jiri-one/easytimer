@@ -34,11 +34,7 @@ modules:
       - install -Dm644 -t /app/share/applications ../packaging/linux/one.jiri.easytimer.desktop
       - install -Dm644 -t /app/share/metainfo ../packaging/linux/one.jiri.easytimer.metainfo.xml
       - install -Dm644 -t /app/share/icons/hicolor/scalable/apps ../packaging/linux/one.jiri.easytimer.svg
-      - install -Dm644 ../LICENSE /app/share/licenses/one.jiri.easytimer/LICENSE
-      - install -Dm644 ../NOTICE /app/share/licenses/one.jiri.easytimer/NOTICE
-      - install -Dm644 ../packaging/licenses/interval-timer-MIT.txt /app/share/licenses/one.jiri.easytimer/interval-timer-MIT.txt
-      - install -Dm644 assets/licenses/*.txt /app/share/licenses/one.jiri.easytimer/
-      - install -Dm644 /var/lib/flutter/LICENSE /app/share/licenses/one.jiri.easytimer/flutter-LICENSE
+      - mkdir -p /app/share/licenses && ln -s ../../easytimer/data/flutter_assets/assets/licenses /app/share/licenses/one.jiri.easytimer
     sources:
       - type: git
         url: https://github.com/jiri-one/easytimer.git

@@ -6,8 +6,9 @@ large controls, system light/dark colours and an interface suited to e-ink scree
 
 Set **Active**, **Rest** and **Sets**, then press Start. Preparation lasts five
 seconds. An empty or zero set count repeats indefinitely. The last settings and
-volume are saved locally. Volume uses whole percentages from 0 to 100. English, Czech, Catalan, Spanish and French follow the
-system language, with English as the fallback.
+volume are saved locally. Volume uses whole percentages from 0 to 100. English,
+Czech, Catalan, Spanish and French follow the system language, with English as
+the fallback.
 
 Space starts, pauses or resumes; Escape stops; Up/Down change the timer volume by
 5%. Android's volume keys always control media volume. The timer does not request
@@ -16,27 +17,26 @@ audio focus, so music and podcasts can keep playing.
 Pausing preparation restarts its five seconds on resume. Pausing an active set
 preserves its remaining time. Resuming from rest skips the rest of that break and
 prepares the next set. The screen stays awake while the timer is shown, including
-while paused, where the platform allows it. On Linux, GTK inhibition keeps the
-screen on with GNOME and through the portal in the Flatpak. On other desktops,
-support depends on the desktop.
+while paused, where the platform allows it. On Linux this uses the desktop's
+Inhibit portal through `wakelock_plus`; support depends on the desktop portal
+backend.
 
 ## Build and test
 
 Use Flutter 3.47.7 / Dart 3.13.5, an Android SDK for APK builds, and the standard
-Flutter Linux build dependencies plus libpulse development headers for desktop builds. From `app/`:
+Flutter Linux build dependencies plus GStreamer development headers
+(`libgstreamer1.0-dev` and `libgstreamer-plugins-base1.0-dev` on Debian/Ubuntu)
+for desktop builds. From `app/`:
 
 ```sh
 flutter pub get
 flutter analyze
 flutter test
-flutter test --platform chrome test/web_platform_test.dart
-python3 -m unittest discover -s test/tool -p '*_test.py'
-test/native/linux/run.sh
+flutter test --platform chrome test/web_platform_test.dart test/platform_parity_browser_test.dart
 ./tool/build_web.sh
 ./tool/build_web.sh --wasm
 flutter build linux --release
 flutter build apk --release
-python3 test/native/android/run.py
 ```
 
 The web output is `app/build/web/`; serve it over HTTPS (localhost also works for
@@ -44,10 +44,12 @@ development). Screen Wake Lock requires a secure origin and may be denied by the
 browser. WASM works without cross-origin isolation using its single-threaded
 renderer, including on GitHub Pages.
 
-Linux audio needs `libpulse.so.0` and a PulseAudio-compatible server, such
-as PipeWire's PulseAudio service. A Flatpak needs `--socket=pulseaudio` and that
-library in its runtime. Audio is decoded locally; no services, proprietary audio
-SDKs or Play services are used.
+Linux audio needs GStreamer with its base and good plugins
+(`gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` on Debian/Ubuntu).
+Flatpak supplies these through the Freedesktop runtime and uses
+`--socket=pulseaudio` for host audio. Audio is decoded locally; no online services,
+proprietary audio SDKs or Play services are used. See
+[packaging instructions](packaging/README.md) for releases and installation.
 
 The committed golden tests load the bundled fonts and cover 824×1648 physical
 pixels at DPR 1.5, 1.875 and 2.5, 420×760 and 640×400 desktop windows, and a 1440×900 browser.
@@ -67,17 +69,20 @@ through FFI, including suspend; the web uses `performance.now()`. Late callbacks
 do not extend a phase or replay expired alarms. Timer text updates on displayed
 second or state changes, with a separate volume subscription.
 
-`workout_controller.dart` connects that engine to persistence and the platform
-bridge. Native sounds use one-shot timers. Android uses SoundPool with media /
-sonification attributes and no audio focus. Linux streams PCM through a small
-asynchronous PulseAudio connection with live gain, bounded server waits and
-interruptible playback. The web backend uses decoded Web Audio buffers
-and a GainNode, scheduling five minutes ahead and topping up on ticks and
-visibility changes. It rebases future audio after context interruption and keeps
-completion delivery idempotent. Pause and Stop cancel scheduled sounds. Gain is the square of
-the slider fraction, matching the original app. Successful cues gate the next
-alarm by their planned times, so delivery jitter cannot drop a three-second
-rest cue. Starting another workout preserves a finish sound already playing.
+`workout_controller.dart` connects the engine to preferences and the platform
+backends. Timing, cue policy and playback coordination are Dart. Native playback
+uses `audioplayers`, with media-player completion events to play the finish sound
+three times. Device playback can introduce small gaps between those hits.
+The web backend uses decoded Web Audio buffers and a GainNode, scheduling five
+minutes ahead and topping up on ticks and visibility changes. It rebases future
+audio after context interruption.
+
+The shared cue policy drops expired alarms and delivers the completion sequence
+once. Successful cues gate the next alarm by planned time, so delivery jitter
+cannot drop a three-second rest cue. Pause, Stop and a new plan cancel queued
+sounds and reset that guard. Volume changes apply immediately; gain is the square
+of the slider fraction, matching the original app. Preferences save after a
+250 ms debounce; interval settings save on Start.
 
 As in the Android original, there is no foreground service or notification in
 this version. A suspended device, terminated process or discarded browser tab

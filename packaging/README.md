@@ -5,7 +5,6 @@
 - `flatpak/flatpak-flutter.yml` — input for [flatpak-flutter](https://github.com/TheAppgineer/flatpak-flutter), which generates the offline Flathub manifest
 - `flatpak/build.sh` — build and bundle the current local commit, without installing the app
 - `fdroid/one.jiri.easytimer.yml` — the [fdroiddata](https://gitlab.com/fdroid/fdroiddata) recipe
-- `licenses/interval-timer-MIT.txt` — the upstream notice for the two WAV sounds and translations
 - `../branding/` — SVG sources and the icon generator; PNG outputs are committed
 - `../app/fastlane/` — English and Czech Android store text and icon
 
@@ -13,10 +12,17 @@ The app ID is `one.jiri.easytimer`, the executable and Dart package are `easytim
 and the display name is EasyTimer. The application code is GPL-3.0-only. The sounds
 and translations reused from [Interval Timer](https://github.com/randombits-dev/interval-timer)
 are MIT-licensed, copyright 2023 Matthew Nienow and contributors. AppStream therefore declares
-`GPL-3.0-only AND MIT AND Apache-2.0`; its metadata is dedicated to CC0-1.0. Keep the upstream notice
-with redistributed assets. Droid Sans Mono is bundled under Apache-2.0. Android includes it as a bundled asset, and web, tarball
-and Flatpak packaging include a copy. In-app attribution should name the upstream
-project and expose its licence too.
+`GPL-3.0-only AND MIT AND Apache-2.0`; its metadata is dedicated to CC0-1.0.
+Droid Sans Mono and the speaker vectors are Apache-2.0.
+
+Custom licence texts and attribution come from `app/assets/licenses/`. Flutter
+includes this directory once in every artifact: APK `assets/flutter_assets/assets/licenses/`,
+Linux `data/flutter_assets/assets/licenses/`, and web `assets/assets/licenses/`.
+Tarballs retain these bundled files without another licence directory. Flutter
+generates dependency licences, including `audioplayers` and `wakelock_plus`, in
+`NOTICES` (web) or `NOTICES.Z` (native) at the asset-bundle root. No extra Flutter
+licence copy is installed. Keep root `NOTICE` synchronized with the bundled
+`NOTICE.txt`, and root `LICENSE` with `EasyTimer-GPL-3.0.txt`.
 
 ## Local checks
 
@@ -40,24 +46,37 @@ adaptive and monochrome launchers, web and maskable icons, the favicon, the stor
 icon, and Linux PNGs from 16 to 512 pixels. The full-size rendered icon is
 `packaging/linux/icons/hicolor/512x512/apps/one.jiri.easytimer.png`.
 
-Android uses SoundPool on the media stream without requesting audio focus.
-Linux uses a custom method-channel backend with the asynchronous PulseAudio API,
-loading `libpulse.so.0` at runtime. Building it requires libpulse development
-headers (`libpulse-dev` on Debian/Ubuntu); it has no GStreamer dependency.
-The browser uses Web Audio with bundled decoded WAVs and a GainNode.
-The Freedesktop Flatpak runtime supplies libpulse; `--socket=pulseaudio` permits
-playback on PulseAudio and PipeWire hosts. No network or host filesystem
-permission is granted. Screen inhibition uses GTK: it works on GNOME and through
-the portal in the Flatpak. On other desktops, support depends on the desktop.
-Exercise sound cues and screen inhibition in the final sandbox before submission.
+Native audio uses `audioplayers`; Android uses media-player completion events to
+sequence the three finish hits without requesting audio focus. Linux links
+GStreamer core, app and audio libraries. Build dependencies on Debian/Ubuntu are
+`libgstreamer1.0-dev` and `libgstreamer-plugins-base1.0-dev`, alongside Flutter's
+standard GTK development tools. Runtime dependencies include GStreamer's base
+and good plugins (`gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good`) for
+WAV decoding and audio output. The Freedesktop Flatpak runtime supplies these;
+`--socket=pulseaudio` permits host playback. The browser uses Web Audio with
+bundled decoded WAVs and a GainNode.
+
+Screen wake lock uses `wakelock_plus`. On Linux it calls
+`org.freedesktop.portal.Inhibit` on `org.freedesktop.portal.Desktop`, so the host
+needs a portal backend supporting idle inhibition. Flatpak permits portal APIs
+by default, with no extra D-Bus talk permission. See
+[Flatpak's D-Bus permissions](https://docs.flatpak.org/en/latest/sandbox-permissions.html#d-bus-access).
+No network or host filesystem permission is granted. Test sound cues and screen
+inhibition in the final sandbox before submission.
 
 ## CI and releases
 
-`ci.yml` runs on pushes to `main` and pull requests. It analyzes and tests Dart,
-builds the web app, Linux and a debug APK, checks desktop metadata and regenerated
-icons, and calls `flatpak.yml` for an offline Flatpak source build. Actions are
-pinned by commit SHA, following EasyDict. `pages.yml` builds and deploys `main` to
-GitHub Pages. Neither ordinary CI nor Pages needs Android signing secrets.
+`ci.yml` analyzes and tests Dart, builds web, Linux and a debug APK, and checks
+desktop metadata and icons. The `app` job builds web once and uploads the Pages
+artifact; deployment from `main` waits for both `tests` and `app`. Manual CI runs
+on `main` can also deploy. Ordinary CI needs no Android signing secrets.
+
+`flatpak.yml` runs on relevant pull requests (`packaging/flatpak/**`, `app/linux/**`,
+or `**/pubspec.lock`), Mondays at 04:23 UTC, and release tags
+through `release.yml`. It caches Flatpak Builder downloads and build state.
+Actions are pinned by SHA. Flutter action jobs cache the SDK and pub packages;
+Android jobs cache Gradle. Linux x86_64 releases use the Flutter action; ARM
+retains the SDK source checkout.
 
 All paths below are relative to the repository root:
 
@@ -88,7 +107,8 @@ its directory. For desktop integration, keep that directory in a stable location
 put an absolute path to its `easytimer` executable in the desktop file's `Exec=`,
 and install the entry and icon under `~/.local/share/applications/` and
 `~/.local/share/icons/hicolor/scalable/apps/`. The tarball depends on compatible
-GTK and audio libraries; Flatpak supplies its own runtime.
+GTK and GStreamer libraries and the base and good plugins; Flatpak supplies its
+own runtime.
 
 Check a downloaded release with `sha256sum -c SHA256SUMS`. Install the Flatpak
 bundle with `flatpak install --user ./easytimer-<version>-linux-x86_64.flatpak`.
@@ -169,8 +189,8 @@ Jiří must configure the following, in this order:
    **`jiri-one.github.io`**, proxy status **DNS only** (grey cloud), TTL Auto.
    The target is the account domain, without a repository path.
 4. After DNS and certificate provisioning finish, enable **Enforce HTTPS** in
-   repository Pages settings. Push an approved commit to `main` or run the Pages
-   workflow manually from `main`, then check `https://easytimer.jiri.one`.
+   repository Pages settings. Push an approved commit to `main` or run CI manually
+   from `main`, then check `https://easytimer.jiri.one`.
 
 With an Actions publishing source, GitHub ignores a `CNAME` file in the artifact
 and does not require one. The repository Pages **Custom domain** setting is the
@@ -185,9 +205,10 @@ The manifest follows EasyDict: Freedesktop **26.08**, **llvm22** and Flutter
 **3.47.7**. `flatpak-flutter` prefetches and pins the Flutter SDK, pub packages and
 other sources so that the actual build runs without network access. The app has
 Wayland, fallback X11, IPC, DRI and PulseAudio access; it has no network access.
-The Flatpak includes root `NOTICE`, the GPL and MIT texts, the Droid Sans Mono
-and speaker-vector Apache-2.0 licences and Flutter's licence under
-`/app/share/licenses/one.jiri.easytimer/`.
+Custom licences remain in `/app/easytimer/data/flutter_assets/assets/licenses/`.
+`/app/share/licenses/one.jiri.easytimer/` is a symlink to that directory, so each
+custom notice has one physical copy. Flutter's generated dependency notices
+remain at `/app/easytimer/data/flutter_assets/NOTICES.Z`.
 
 For the same local-commit build used by CI, first have the Freedesktop Platform,
 Sdk and llvm22 extension for 26.08, plus either `flatpak-builder` or the
@@ -205,7 +226,7 @@ FLATPAK_FLUTTER=/path/to/flatpak-flutter/flatpak-flutter.py ./packaging/flatpak/
 Commit all intended source changes first: the helper builds **HEAD**, not the
 working directory. Output is `app/build/flatpak/easytimer.flatpak`; the generated
 local manifest, dependency manifests and build repository are under the same
-ignored directory. The CI job builds this bundle on PRs, pushes and release tags.
+ignored directory. CI builds it on relevant PRs, weekly and on release tags.
 The local manifest points to a local Git checkout and is not the Flathub submission.
 
 Before a Flathub release:
@@ -224,7 +245,7 @@ Before a Flathub release:
    flatpak run one.jiri.easytimer
    ```
 
-3. Review and test the finished app, including PulseAudio sound cues. Copy
+3. Test the finished app, including GStreamer sound cues and portal inhibition. Copy
    `one.jiri.easytimer.yml` and `generated/` into a fork of `flathub/flathub` on a
    branch based on **`new-pr`**, then submit a PR against **`new-pr`** titled
    **Add one.jiri.easytimer**. Follow the current
