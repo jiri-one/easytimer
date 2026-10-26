@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>one.jiri.easytimer</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-only AND MIT</project_license>
+  <project_license>GPL-3.0-only AND MIT AND Apache-2.0</project_license>
   <name>EasyTimer</name>
   <summary>A simple interval timer for workouts and focused work</summary>
   <summary xml:lang="cs">Jednoduchý intervalový časovač pro cvičení a práci</summary>
@@ -23,6 +23,7 @@
     <p>
       The application code is licensed under GPL-3.0-only. Sounds and translations
       from Interval Timer by Matthew Nienow are licensed under MIT.
+      The bundled Droid Sans Mono font is licensed under Apache-2.0.
     </p>
   </description>
   <launchable type="desktop-id">one.jiri.easytimer.desktop</launchable>

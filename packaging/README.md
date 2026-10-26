@@ -13,8 +13,8 @@ The app ID is `one.jiri.easytimer`, the executable and Dart package are `easytim
 and the display name is EasyTimer. The application code is GPL-3.0-only. The sounds
 and translations reused from [Interval Timer](https://github.com/randombits-dev/interval-timer)
 are MIT-licensed, copyright 2023 Matthew Nienow. AppStream therefore declares
-`GPL-3.0-only AND MIT`; its metadata is dedicated to CC0-1.0. Keep the upstream notice
-with redistributed assets. Android includes it as a native asset, and web, tarball
+`GPL-3.0-only AND MIT AND Apache-2.0`; its metadata is dedicated to CC0-1.0. Keep the upstream notice
+with redistributed assets. Droid Sans Mono is bundled under Apache-2.0. Android includes it as a native asset, and web, tarball
 and Flatpak packaging include a copy. In-app attribution should name the upstream
 project and expose its licence too.
 
@@ -40,13 +40,12 @@ adaptive and monochrome launchers, web and maskable icons, the favicon, the stor
 icon, and Linux PNGs from 16 to 512 pixels. The full-size rendered icon is
 `packaging/linux/icons/hicolor/512x512/apps/one.jiri.easytimer.png`.
 
-Linux audio dependencies vary with the chosen Flutter plugin. CI installs the
-GStreamer development packages and PulseAudio headers as well as GTK, clang,
-CMake, Ninja and pkg-config. The Freedesktop Flatpak runtime provides GStreamer
-and PulseAudio libraries; both a GStreamer backend and a miniaudio backend can use
-the permitted PulseAudio socket, including on PipeWire hosts. No network or host
-filesystem permission is granted. Exercise sound cues in the final sandbox before
-submission; native dependency downloads may need additional offline sources.
+Linux audio uses the app's custom native method-channel backend, which loads
+`libpulse-simple.so.0` at runtime and sends sound cues through PulseAudio. It has
+no GStreamer dependency and needs no PulseAudio build headers. The Freedesktop
+Flatpak runtime supplies the library; `--socket=pulseaudio` permits playback on
+PulseAudio and PipeWire hosts. No network or host filesystem permission is granted.
+Exercise sound cues in the final sandbox before submission.
 
 ## CI and releases
 
@@ -138,8 +137,9 @@ SDKs before submitting to F-Droid.
 ## GitHub Pages and DNS
 
 The web script uses `flutter build web --release --base-href /` with JavaScript
-and locally bundled CanvasKit and Roboto. JavaScript is the conservative choice
-while the audio plugin is still being selected. A Wasm build also has a JavaScript
+and locally bundled CanvasKit and Droid Sans Mono. The same font aliases are used
+by native and web builds, including Flutter's default Roboto family. JavaScript
+is the conservative production build; the Web Audio backend also supports Wasm. A Wasm build also has a JavaScript
 fallback, but requires Wasm-compatible dependencies; multithreaded Wasm rendering
 requires cross-origin-isolation headers. See
 [Flutter's Wasm documentation](https://docs.flutter.dev/platform-integration/web/wasm).
@@ -180,6 +180,9 @@ The manifest follows EasyDict: Freedesktop **26.08**, **llvm22** and Flutter
 **3.47.7**. `flatpak-flutter` prefetches and pins the Flutter SDK, pub packages and
 other sources so that the actual build runs without network access. The app has
 Wayland, fallback X11, IPC, DRI and PulseAudio access; it has no network access.
+The Flatpak includes root `NOTICE`, the GPL and MIT texts, the Droid Sans Mono
+Apache-2.0 licence and Flutter's licence under
+`/app/share/licenses/one.jiri.easytimer/`.
 
 For the same local-commit build used by CI, first have the Freedesktop Platform,
 Sdk and llvm22 extension for 26.08, plus either `flatpak-builder` or the
@@ -216,7 +219,7 @@ Before a Flathub release:
    flatpak run one.jiri.easytimer
    ```
 
-3. Review and test the finished app, including the selected audio backend. Copy
+3. Review and test the finished app, including PulseAudio sound cues. Copy
    `one.jiri.easytimer.yml` and `generated/` into a fork of `flathub/flathub` on a
    branch based on **`new-pr`**, then submit a PR against **`new-pr`** titled
    **Add one.jiri.easytimer**. Follow the current

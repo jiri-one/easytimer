@@ -7,30 +7,20 @@ flutter build web --release --no-web-resources-cdn --base-href / "$@"
 find build/web/canvaskit -maxdepth 1 \( -name 'skwasm*' -o -name 'wimp*' -o -name 'webparagraph' \) -exec rm -rf {} +
 find build/web/canvaskit -name '*.symbols' -delete
 
-# The engine otherwise fetches its default font from Google Fonts.
-fonts="$(flutter --version --machine | python3 -c 'import json, sys; print(json.load(sys.stdin)["flutterRoot"])')/bin/cache/artifacts/material_fonts"
-roboto=build/web/assets/fonts/roboto
-mkdir -p "$roboto"
-for weight in Regular Medium Bold; do
-    cp "$fonts/Roboto-$weight.ttf" "$roboto/"
-done
-cp "$fonts/Roboto_LICENSE.txt" "$roboto/LICENSE.txt"
-python3 - <<'PY'
+# Preserve the pubspec font aliases so web and native use the same glyphs.
+python3 - <<'PYFONT'
 import json
 from pathlib import Path
 
-manifest = Path("build/web/assets/FontManifest.json")
-families = [family for family in json.loads(manifest.read_text()) if family["family"] != "Roboto"]
-families.append({
-    "family": "Roboto",
-    "fonts": [
-        {"asset": "fonts/roboto/Roboto-Regular.ttf"},
-        {"asset": "fonts/roboto/Roboto-Medium.ttf", "weight": 500},
-        {"asset": "fonts/roboto/Roboto-Bold.ttf", "weight": 700},
-    ],
-})
-manifest.write_text(json.dumps(families) + "\n")
-PY
+manifest = json.loads(Path("build/web/assets/FontManifest.json").read_text())
+families = {family["family"]: family["fonts"] for family in manifest}
+assert families["Roboto"] == families["DroidSansMono"]
+for fonts in families.values():
+    for font in fonts:
+        assert (Path("build/web/assets") / font["asset"]).is_file()
+PYFONT
 mkdir -p build/web/licenses
 cp ../LICENSE build/web/licenses/GPL-3.0-only.txt
 cp ../packaging/licenses/interval-timer-MIT.txt build/web/licenses/
+cp ../NOTICE build/web/licenses/NOTICE.txt
+cp assets/licenses/DroidSansMono-Apache-2.0.txt build/web/licenses/
