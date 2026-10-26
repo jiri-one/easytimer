@@ -10,7 +10,6 @@
 
 #include "native_audio.h"
 #include "native_protocol.h"
-#include "screen_inhibitor.h"
 
 namespace {
 
@@ -32,15 +31,7 @@ struct Reply {
 class PlatformBridge {
  public:
   PlatformBridge(GtkApplication* application, GtkWindow* window)
-      : screen_inhibitor_(
-            [application, window] {
-              return gtk_application_inhibit(application, window,
-                                             GTK_APPLICATION_INHIBIT_IDLE,
-                                             "Timer is running");
-            },
-            [application](guint cookie) {
-              gtk_application_uninhibit(application, cookie);
-            }) {}
+      : application_(application), window_(window) {}
 
   ~PlatformBridge() {
     *alive_ = false;
@@ -203,9 +194,19 @@ class PlatformBridge {
                                  nullptr);
   }
 
-  void KeepAwake(bool enabled) { screen_inhibitor_.SetEnabled(enabled); }
+  void KeepAwake(bool enabled) {
+    if (enabled && inhibit_cookie_ == 0) {
+      inhibit_cookie_ = gtk_application_inhibit(
+          application_, window_, GTK_APPLICATION_INHIBIT_IDLE, "Timer is running");
+    } else if (!enabled && inhibit_cookie_ != 0) {
+      gtk_application_uninhibit(application_, inhibit_cookie_);
+      inhibit_cookie_ = 0;
+    }
+  }
 
-  ScreenInhibitor screen_inhibitor_;
+  GtkApplication* application_;
+  GtkWindow* window_;
+  guint inhibit_cookie_ = 0;
   double gain_ = 1.0;
   std::shared_ptr<std::atomic<bool>> alive_ =
       std::make_shared<std::atomic<bool>>(true);

@@ -28,18 +28,8 @@ Unresponsive stages without cancellation must time out within 1400 ms.
 A separate executable loads the real system libpulse against a temporary Unix
 socket that accepts connections but never answers. It verifies deadline expiry,
 timeout, Stop, another request and disposal without a functioning sound server.
-The default suite needs C++14, libpulse and GIO development headers, pkg-config,
-Python 3 and `dbus-run-session`. It uses temporary build directories and installs
-nothing.
-
-`run_inhibit.sh`, also invoked by the main runner, tests the production screen
-inhibitor against a mock `org.freedesktop.ScreenSaver` service on a private bus.
-GTK inhibition is tried first; an asynchronous D-Bus fallback is attempted only
-after GTK returns zero and neither `FLATPAK_ID` nor `/.flatpak-info` identifies a
-Flatpak. An existing `DBUS_SESSION_BUS_ADDRESS` is required for fallback; the
-application never autolaunches a bus or waits synchronously for the service.
-The tests must run through `dbus-run-session`; they do not use the user's bus or
-change desktop preferences. Flatpak keeps the GTK inhibition path.
+The default suite needs C++14, libpulse development headers, pkg-config and
+Python 3. It uses temporary build directories and installs nothing.
 
 When prepared Flutter Linux engine artifacts exist, the script also checks the
 production MethodChannel argument parsers and result maps with real `FlValue`

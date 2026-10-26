@@ -41,11 +41,9 @@ if [[ -f "$flutter_linux/libflutter_linux_gtk.so" ]]; then
       '-DAPPLICATION_ID="one.jiri.easytimer"' \
       app/linux/runner/main.cc app/linux/runner/my_application.cc \
       app/linux/runner/native_audio.cc app/linux/runner/platform_bridge.cc \
-      app/linux/runner/screen_inhibitor.cc \
       app/linux/flutter/generated_plugin_registrant.cc \
       -L"$flutter_linux" -lflutter_linux_gtk "${gtk_libs[@]}" -ldl -o "$output/runner"
   fi
 else
   printf '%s\n' 'SKIP MethodChannel value tests: set FLUTTER_LINUX_DIR to prepared Linux engine artifacts'
 fi
-app/test/native/linux/run_inhibit.sh

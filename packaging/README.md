@@ -47,9 +47,8 @@ headers (`libpulse-dev` on Debian/Ubuntu); it has no GStreamer dependency.
 The browser uses Web Audio with bundled decoded WAVs and a GainNode.
 The Freedesktop Flatpak runtime supplies libpulse; `--socket=pulseaudio` permits
 playback on PulseAudio and PipeWire hosts. No network or host filesystem
-permission is granted. Screen inhibition uses GTK and its portal in Flatpak;
-unsandboxed desktop builds fall back to `org.freedesktop.ScreenSaver` if GTK
-cannot inhibit. No extra Flatpak `--talk-name` permission is required.
+permission is granted. Screen inhibition uses GTK: it works on GNOME and through
+the portal in the Flatpak. On other desktops, support depends on the desktop.
 Exercise sound cues and screen inhibition in the final sandbox before submission.
 
 ## CI and releases

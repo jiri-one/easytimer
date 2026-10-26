@@ -16,9 +16,9 @@ audio focus, so music and podcasts can keep playing.
 Pausing preparation restarts its five seconds on resume. Pausing an active set
 preserves its remaining time. Resuming from rest skips the rest of that break and
 prepares the next set. The screen stays awake while the timer is shown, including
-while paused, where the platform allows it. Linux tries GTK inhibition first,
-then the freedesktop ScreenSaver service for desktops such as niri or KDE.
-Flatpak uses GTK's portal path without extra D-Bus permissions.
+while paused, where the platform allows it. On Linux, GTK inhibition keeps the
+screen on with GNOME and through the portal in the Flatpak. On other desktops,
+support depends on the desktop.
 
 ## Build and test
 
