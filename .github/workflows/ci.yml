@@ -71,7 +71,8 @@ jobs:
       - run: desktop-file-validate packaging/linux/one.jiri.easytimer.desktop
       - run: appstreamcli validate --no-net packaging/linux/one.jiri.easytimer.metainfo.xml
       - run: ./branding/generate.sh
-      - run: git diff --exit-code
+      # Rasterization varies between the librsvg versions shipped by distributions.
+      - run: git diff --exit-code -- '*.svg' '*.xml'
 
   flatpak:
     name: Flatpak
