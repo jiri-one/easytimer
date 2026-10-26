@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=EasyTimer
+GenericName=Interval Timer
+GenericName[cs]=Intervalový časovač
+Comment=Time your workouts, stretching and focused work
+Comment[cs]=Časovač pro cvičení, protahování a soustředěnou práci
+Icon=one.jiri.easytimer
+Exec=easytimer
+Terminal=false
+StartupNotify=true
+Categories=Utility;Clock;
+Keywords=timer;interval;workout;exercise;rest;stopwatch;
+Keywords[cs]=časovač;interval;cvičení;odpočinek;stopky;

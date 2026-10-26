@@ -1,0 +1,1 @@
+An offline interval timer for workouts, stretching and focused work.

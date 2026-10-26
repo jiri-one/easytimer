@@ -1,0 +1,1 @@
+The first EasyTimer release for Linux, the web and Android.
