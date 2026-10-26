@@ -1414,6 +1414,29 @@ void main() {
     },
   );
 
+  for (final platform in [TargetPlatform.linux, TargetPlatform.android]) {
+    _nativeTest(
+      'healthy stream volume stays live after the other player fails on $platform',
+      (h) async {
+        await h.backend.initialize();
+        h.schedule(const [SoundEvent(SoundKind.end, 0, null)]);
+        await h.pump();
+        h.alarm.emitError();
+        await h.pump();
+        for (final player in h.players) {
+          player.calls.clear();
+        }
+        h.backend.setVolume(50);
+        await h.pump();
+        expect(h.end.volume, 0.25);
+        expect(h.end.playing, isTrue);
+        expect(h.end.calls, [('volume', 0.25)]);
+        expect(h.alarm.calls, isEmpty);
+      },
+      platform: platform,
+    );
+  }
+
   _nativeTest('squared gain updates a playing finish', (h) async {
     h.schedule([const SoundEvent(SoundKind.end, 0, null)]);
     await h.pump();
