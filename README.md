@@ -6,8 +6,13 @@ large controls and high-contrast light/dark themes suited to e-ink screens.
 Text is black on white or white on black. Green ACTIVE and red REST labels
 have at least 7:1 contrast; the coloured control-button fills are preserved.
 Text and controls scale with the window for reading from a distance. Wide timer
-windows put the countdown beside a vertical control column; fullscreen and
-maximised windows use the available space without a fixed size cap.
+windows put the countdown beside a vertical control column and use the available
+space without a fixed size cap.
+
+On desktop browsers, the web app opens in a phone frame with a short about panel.
+**Full screen** expands the app to fill the display; Escape returns to the frame.
+Phones, tablets and narrow windows open the full-page app. The page follows the
+system light/dark theme and uses Czech or English; the app keeps all five languages.
 
 Set **Active**, **Rest** and **Sets**, then press Start. Preparation lasts five
 seconds. An empty or zero set count repeats indefinitely. The last settings and

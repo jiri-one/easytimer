@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
@@ -13,12 +13,98 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="manifest" href="manifest.json">
   <title>EasyTimer</title>
+  <script>
+    document.documentElement.lang = navigator.language.startsWith("cs") ? "cs" : "en";
+  </script>
   <style>
-    html, body { margin: 0; background: #ffffff; }
-    @media (prefers-color-scheme: dark) { html, body { background: #000000; } }
+    @font-face {
+      font-family: "Droid Sans Mono";
+      src: url("assets/assets/fonts/DroidSansMono.ttf");
+    }
+    :root { --fg: #000000; --bg: #ffffff; color-scheme: light; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg: #ffffff; --bg: #000000; color-scheme: dark; }
+    }
+    html, body { height: 100%; margin: 0; background: var(--bg); }
+    #layout { height: 100%; }
+    body { color: var(--fg); font: 19px/1.5 "Droid Sans Mono", monospace; }
+    a { color: inherit; }
+    /* Flutter sets lang on its host; only page translations may be hidden. */
+    html[lang="cs"] :is(#about, #loading) [lang="en"],
+    html[lang="en"] :is(#about, #loading) [lang="cs"] { display: none; }
+    #phone { position: fixed; inset: 0; background: var(--bg); }
+    #screen { position: absolute; inset: 0; overflow: hidden; }
+    #about, #bezel { display: none; }
+    #loading {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 16px;
+    }
+    #loading img { width: 96px; height: 96px; }
+    .framed #layout {
+      display: flex; align-items: center; justify-content: center; gap: clamp(24px, 4.5vw, 64px);
+      box-sizing: border-box; min-height: 100%; padding: 24px;
+    }
+    .framed #phone {
+      position: relative; inset: auto; flex: none;
+      width: 422px; height: min(876px, calc(100vh - 48px)); border-radius: 52px;
+    }
+    .framed #screen { inset: 16px; }
+    /* Flutter canvases can escape clipping; an overlaid bezel covers their corners. */
+    .framed #bezel {
+      display: block; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+      border: 16px solid #000000; border-radius: 52px; outline: 3px solid var(--fg);
+    }
+    .framed #about {
+      display: block; flex: 1; max-width: 460px; min-width: 0;
+      max-height: calc(100vh - 48px); overflow: auto;
+    }
+    #about .logo { display: block; width: 112px; height: 112px; }
+    #about h1 { margin: 12px 0; font-size: 44px; }
+    #about ul { padding-left: 24px; }
+    #about li { margin: 10px 0; }
+    #fullscreen {
+      display: flex; align-items: center; gap: 12px;
+      max-width: 100%; margin-top: 12px; padding: 10px 18px; cursor: pointer;
+      font: inherit; color: var(--fg); background: var(--bg);
+      border: 3px solid var(--fg); border-radius: 8px;
+    }
+    #fullscreen[hidden] { display: none; }
+    #phone:fullscreen { width: 100%; height: 100%; border-radius: 0; }
+    #phone:fullscreen #screen { inset: 0; }
+    #phone:fullscreen #bezel { display: none; }
   </style>
 </head>
 <body>
+  <div id="layout">
+    <aside id="about">
+      <img class="logo" src="icons/Icon-192.png" alt="">
+      <h1>EasyTimer</h1>
+      <p lang="cs">Jednoduchý intervalový časovač na cvičení. Odměřuje cvičení, pauzy a série a každou změnu ohlásí pípnutím. Velká čísla a vysoký kontrast jsou dobře čitelné i z dálky a na e‑inkových displejích.</p>
+      <p lang="en">A simple interval timer for workouts. It times the active periods, rests and sets and beeps at every change. Large numbers and high contrast read well from a distance and on e-ink screens.</p>
+      <ul lang="cs">
+        <li><a href="https://github.com/jiri-one/easytimer/releases">Aplikace pro Linux a Android</a> (první vydání připravujeme)</li>
+        <li><a href="https://github.com/jiri-one/easytimer">Zdrojový kód</a></li>
+      </ul>
+      <ul lang="en">
+        <li><a href="https://github.com/jiri-one/easytimer/releases">Apps for Linux and Android</a> (the first release is on its way)</li>
+        <li><a href="https://github.com/jiri-one/easytimer">Source code</a></li>
+      </ul>
+      <button id="fullscreen" type="button" hidden>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/></svg>
+        <span lang="cs">Celá obrazovka</span><span lang="en">Full screen</span>
+      </button>
+    </aside>
+    <main id="phone">
+      <div id="screen">
+        <div id="loading" role="status">
+          <img src="icons/Icon-192.png" alt="">
+          <span lang="cs">Načítám EasyTimer…</span><span lang="en">Loading EasyTimer…</span>
+        </div>
+      </div>
+      <div id="bezel"></div>
+    </main>
+  </div>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

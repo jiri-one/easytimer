@@ -197,6 +197,9 @@ but requires Wasm-compatible dependencies; multithreaded Wasm rendering
 requires cross-origin-isolation headers. See
 [Flutter's Wasm documentation](https://docs.flutter.dev/platform-integration/web/wasm).
 The manifest uses EasyTimer, standalone display and both regular and maskable icons.
+Desktop browsers open the app in a phone frame with an about panel and a Full screen
+button. Phones, tablets and small windows open the full-page app. The surrounding
+page uses the bundled Droid Sans Mono font and follows the system light/dark theme.
 An offline Android/Linux app does not by itself guarantee offline web availability;
 check the web caching behaviour separately before advertising it.
 
