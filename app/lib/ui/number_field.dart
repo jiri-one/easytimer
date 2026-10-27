@@ -60,7 +60,7 @@ class _NumberFieldState extends State<NumberField> {
             onTap: _focus.requestFocus,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: foreground)),
+                border: Border(bottom: BorderSide(color: foreground, width: 2)),
               ),
               child: Padding(
                 padding: widget.padding,
