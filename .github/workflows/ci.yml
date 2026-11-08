@@ -46,28 +46,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/flutter
       - run: ./tool/build_web.sh
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
+          name: web-app
           path: app/build/web
+          if-no-files-found: error
 
   deploy:
-    name: GitHub Pages
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    name: Cloudflare Workers
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [tests, app]
     runs-on: ubuntu-24.04
-    permissions:
-      pages: write
-      id-token: write
     concurrency:
-      group: pages
+      group: cloudflare-easytimer
       cancel-in-progress: false
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: cloudflare
+      url: https://easytimer.jiri.one
     steps:
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
-      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
-        id: deployment
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: web-app
+          path: app/build/web
+      - uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.158.0'
+          command: deploy
+          workingDirectory: app
 
   linux:
     name: Linux

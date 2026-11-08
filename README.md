@@ -57,7 +57,7 @@ Run the isolated Linux portal test using the private-bus setup in the
 The web output is `app/build/web/`; serve it over HTTPS (localhost also works for
 development). Screen Wake Lock requires a secure origin and may be denied by the
 browser. WASM works without cross-origin isolation using its single-threaded
-renderer, including on GitHub Pages.
+renderer.
 
 Linux audio needs GStreamer with its base and good plugins
 (`gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` on Debian/Ubuntu).
@@ -79,6 +79,20 @@ After an intentional visual change, regenerate goldens with:
 ```sh
 flutter test --concurrency=4 test/golden_test.dart --update-goldens
 ```
+
+## Web hosting
+
+The public app is at [easytimer.jiri.one](https://easytimer.jiri.one).
+GitHub Actions deploys `app/build/web/` to the assets-only Cloudflare Worker
+`easytimer`, configured in [app/wrangler.jsonc](app/wrangler.jsonc).
+Deployment follows successful tests and a web build on pushes to `main` or a
+manual CI run on `main`.
+
+The GitHub environment `cloudflare` must allow only `main` and contain
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Bind the custom domain
+separately in Cloudflare; the Wrangler configuration leaves domain bindings
+externally managed. The `workers.dev` endpoint and preview URLs are disabled.
+Unknown paths return 404.
 
 ## Implementation
 

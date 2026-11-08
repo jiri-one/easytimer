@@ -2,7 +2,7 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-# GitHub Pages serves the custom domain at /; bundled resources avoid third-party requests.
+# Bundled resources avoid third-party requests.
 flutter build web --release --no-web-resources-cdn --base-href / "$@"
 wasm=false
 for argument in "$@"; do
