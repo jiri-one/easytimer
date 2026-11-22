@@ -6,3 +6,5 @@ analyzer:
     - android/**
     - linux/**
     - web/**
+    # gen-l10n still imports flutter_localizations; it is regenerated on every build.
+    - lib/l10n/app_localizations*.dart

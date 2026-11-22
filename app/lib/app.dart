@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'l10n/app_localizations.dart';
@@ -66,7 +66,11 @@ class _EasyTimerAppState extends State<EasyTimerApp>
     onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
     debugShowCheckedModeBanner: false,
     locale: widget.locale,
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    // The generated list still holds flutter_localizations' delegates, which material_ui widgets do not read.
+    localizationsDelegates: const [
+      AppLocalizations.delegate,
+      ...GlobalMaterialLocalizations.delegates,
+    ],
     supportedLocales: AppLocalizations.supportedLocales,
     theme: _theme(Brightness.light),
     darkTheme: _theme(Brightness.dark),
