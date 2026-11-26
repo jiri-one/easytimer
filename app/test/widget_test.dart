@@ -157,6 +157,30 @@ void main() {
     }
   });
 
+  for (final size in [
+    const Size(144, 500),
+    const Size(120, 500),
+    const Size(120, 80),
+  ]) {
+    timerTest('tiny $size windows keep settings and timer layouts valid', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      await tester.pumpWidget(EasyTimerApp(controller: controller));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      for (final editable in tester.widgetList<EditableText>(
+        find.byType(EditableText),
+      )) {
+        expect(editable.style.fontSize, greaterThan(0));
+      }
+      controller.start(const WorkoutOptions());
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   Future<void> mount(WidgetTester tester) async {
     await tester.pumpWidget(EasyTimerApp(controller: controller));
     await tester.pumpAndSettle();

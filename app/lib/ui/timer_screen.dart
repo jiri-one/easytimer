@@ -26,8 +26,8 @@ class TimerScreen extends StatelessWidget {
       final colors = AppPalette.of(context);
       final width = constraints.maxWidth;
       final height = constraints.maxHeight;
-      final wide = width > height * 1.2;
-      final contentWidth = width * (wide ? .96 : .92);
+      final wide = width > height * 1.2 && width >= 160;
+      final contentWidth = math.max(120.0, width * (wide ? .96 : .92));
       final padding = height * (wide ? .01 : .015);
       final availableHeight = height - padding * 2;
       final columnGap = wide ? contentWidth * .02 : 0.0;

@@ -79,7 +79,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           1.25 * layoutHeight,
         );
         final valueExtent = math.min(.13 * layoutHeight, columnWidth / 5.1);
-        final targetSize = math.max(minimumTarget, 1.25 * valueExtent);
+        final targetSize = math.min(
+          columnWidth / 2,
+          math.max(minimumTarget, 1.25 * valueExtent),
+        );
         final fieldPadding = EdgeInsets.symmetric(
           horizontal: .05 * valueExtent,
         );

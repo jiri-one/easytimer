@@ -64,7 +64,7 @@ class NativeText extends StatelessWidget {
       }
     }
     painter.dispose();
-    return lower;
+    return lower.clamp(1, double.infinity);
   }
 
   @override
