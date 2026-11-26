@@ -54,6 +54,8 @@ class BrowserFixture {
   var resumeCalls = 0;
   var holdResume = false;
   var failResume = false;
+  var failAsset = false;
+  var failDecode = false;
   Completer<void>? decodeGate;
   Completer<JSAny?>? _resume;
 
@@ -72,6 +74,7 @@ class BrowserFixture {
     // The browser test binding does not serve the platform asset channel.
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMessageHandler('flutter/assets', (message) async {
+          if (failAsset) throw StateError('Asset fetch failed');
           return _assets[utf8.decode(Uint8List.sublistView(message!))];
         });
   }
@@ -164,6 +167,7 @@ class FakeAudioContext {
   JSPromise<JSObject> decodeAudioData(JSArrayBuffer data) => _decode(data).toJS;
 
   Future<JSObject> _decode(JSArrayBuffer data) async {
+    if (fixture.failDecode) throw StateError('Audio decoding failed');
     final buffer = FakeBuffer(data.toDart.asByteData());
     fixture.buffers.add(buffer);
     if (fixture.buffers.length == 2) fixture.decoding.complete();

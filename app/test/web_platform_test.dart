@@ -70,6 +70,51 @@ void main() {
     },
   );
 
+  for (final failure in ['asset', 'decode']) {
+    for (final trigger in ['schedule', 'gesture', 'visibility']) {
+      test('$failure loading failure retries through $trigger', () async {
+        backend.dispose();
+        audio.restore();
+        audio = BrowserFixture()..install();
+        audio.failAsset = failure == 'asset';
+        audio.failDecode = failure == 'decode';
+        backend = PlatformBackend(clock);
+        final first = backend.initialize();
+        expect(identical(first, backend.initialize()), isTrue);
+        await expectLater(first, throwsA(anything));
+        expect(audio.liveStarts, isEmpty);
+        audio.failAsset = false;
+        audio.failDecode = false;
+        audio.decodeGate = Completer<void>();
+        if (trigger != 'schedule') {
+          if (trigger == 'gesture') {
+            audio.activate('pointerup');
+          } else {
+            audio.visible('visible');
+          }
+          await audio.decoding.future;
+        }
+        schedule([alarm]);
+        final retry = backend.initialize();
+        expect(identical(first, retry), isFalse);
+        expect(identical(retry, backend.initialize()), isTrue);
+        await audio.decoding.future;
+        expect(audio.buffers, hasLength(2));
+        expect(audio.startTimes, isEmpty);
+        audio.decodeGate!.complete();
+        await retry;
+        expect(audio.liveStarts, [12]);
+        audio.advance(12.01);
+        expect(audio.played, hasLength(1));
+        await backend.initialize();
+        expect(audio.buffers, hasLength(2));
+        final resumes = audio.resumeCalls;
+        audio.activate('pointerup');
+        expect(audio.resumeCalls, resumes + 1);
+      });
+    }
+  }
+
   for (final action in ['continue', 'cancel', 'dispose']) {
     test('asynchronous loading respects the current plan: $action', () async {
       backend.dispose();

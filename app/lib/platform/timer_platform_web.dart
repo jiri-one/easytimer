@@ -32,6 +32,13 @@ class PlatformBackend extends TimerPlatform {
     _visibility = ((web.Event event) {
       if (web.document.visibilityState == 'visible') unawaited(_resume());
     }).toJS;
+    _context.onstatechange = ((web.Event event) => _reconcile()).toJS;
+    for (final type in _activationEvents) {
+      web.document.addEventListener(type, _activation, true.toJS);
+    }
+    // Flutter's window keyboard handler stops propagation before the document.
+    web.window.addEventListener('keydown', _activation, true.toJS);
+    web.document.addEventListener('visibilitychange', _visibility, true.toJS);
   }
 
   static const _activationEvents = ['pointerdown', 'pointerup', 'touchend'];
@@ -46,27 +53,24 @@ class PlatformBackend extends TimerPlatform {
   final _policy = CuePolicy();
   int _revision = 0;
   double? _clockOffsetMs;
+  Future<void>? _initialization;
   bool _ready = false;
   bool _disposed = false;
 
   @override
-  Future<void> initialize() async {
-    _context.onstatechange = ((web.Event event) => _reconcile()).toJS;
-    for (final type in _activationEvents) {
-      web.document.addEventListener(type, _activation, true.toJS);
-    }
-    // Flutter's window keyboard handler stops propagation before the document.
-    web.window.addEventListener('keydown', _activation, true.toJS);
-    web.document.addEventListener('visibilitychange', _visibility, true.toJS);
-    final buffers = await Future.wait([
-      _decode(SoundKind.alarm),
-      _decode(SoundKind.end),
-    ]);
-    if (_disposed) return;
-    _alarm = buffers[0];
-    _end = buffers[1];
-    _ready = true;
-    _reconcile();
+  Future<void> initialize() {
+    if (_ready || _disposed) return Future.value();
+    return _initialization ??= () async {
+      final buffers = await Future.wait([
+        _decode(SoundKind.alarm),
+        _decode(SoundKind.end),
+      ]);
+      if (_disposed) return;
+      _alarm = buffers[0];
+      _end = buffers[1];
+      _ready = true;
+      _reconcile();
+    }().whenComplete(() => _initialization = null);
   }
 
   Future<web.AudioBuffer> _decode(SoundKind kind) async {
@@ -78,6 +82,7 @@ class PlatformBackend extends TimerPlatform {
     if (_disposed) return;
     final revision = _revision;
     try {
+      if (!_ready) unawaited(initialize().catchError((Object _) {}));
       _reconcile();
       await _context.resume().toDart;
       if (revision == _revision) _reconcile();
@@ -90,6 +95,7 @@ class PlatformBackend extends TimerPlatform {
   void schedule(List<SoundEvent> events) {
     if (_disposed) return;
     _policy.merge(events);
+    if (!_ready) unawaited(initialize().catchError((Object _) {}));
     _reconcile();
   }
 
