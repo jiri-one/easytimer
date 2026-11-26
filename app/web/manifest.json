@@ -7,7 +7,7 @@
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#ffffff",
-    "description": "A simple, offline interval timer for workouts, stretching and focused work.",
+    "description": "A simple interval timer for workouts, stretching and focused work.",
     "prefer_related_applications": false,
     "icons": [
         {

@@ -33,9 +33,6 @@ if (frameMedia.matches) {
 
 _flutter.loader.load({
   config,
-  serviceWorkerSettings: {
-    serviceWorkerVersion: {{flutter_service_worker_version}},
-  },
   onEntrypointLoaded: async (engineInitializer) => {
     const appRunner = await engineInitializer.initializeEngine(config);
     await appRunner.runApp();
