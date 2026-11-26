@@ -624,7 +624,7 @@ void main() {
   });
 
   _nativeTest(
-    'schedule reads the clock once and duplicate plans do not rearm',
+    'schedule reads the clock once and refreshes duplicate plans',
     (h) async {
       final timers = <Timer>[];
       await runZoned(
@@ -638,8 +638,9 @@ void main() {
           h.clock.reads = 0;
           h.schedule([event]);
           expect(h.clock.reads, 1);
-          expect(timers, [timer]);
-          expect(timer.isActive, isTrue);
+          expect(timers, hasLength(2));
+          expect(timer.isActive, isFalse);
+          expect(timers.last.isActive, isTrue);
         },
         zoneSpecification: ZoneSpecification(
           createTimer: (self, parent, zone, duration, callback) {
@@ -1287,6 +1288,26 @@ void main() {
       expect(h.alarm.attempts, [0]);
     },
   );
+
+  _nativeTest('refresh starts an already merged cue after suspend', (h) async {
+    await h.backend.initialize();
+    h.schedule(const [
+      SoundEvent(SoundKind.alarm, 2000, 2049),
+      SoundEvent(SoundKind.alarm, 62000, 62049),
+      SoundEvent(SoundKind.end, 65000, null),
+    ]);
+    await h.pump(2000);
+    await h.pump(600);
+    h.clock.nowMs = 62010;
+    h.schedule(const [
+      SoundEvent(SoundKind.alarm, 62000, 62049),
+      SoundEvent(SoundKind.end, 65000, null),
+    ]);
+    await h.pump();
+    expect(h.starts, [(SoundKind.alarm, 2000), (SoundKind.alarm, 62010)]);
+    await h.pump(400);
+    expect(h.starts, hasLength(2));
+  });
 
   _nativeTest('bounded wake detects BOOTTIME jumping over expired cues', (
     h,

@@ -198,7 +198,8 @@ class PlatformBackend extends TimerPlatform {
   @override
   void schedule(List<SoundEvent> events) {
     final now = _clock.nowMs;
-    if (_policy.merge(events)) _wake(now);
+    _policy.merge(events);
+    _wake(now);
   }
 
   void _wake(int now) {
