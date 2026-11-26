@@ -37,6 +37,10 @@ class _EasyTimerAppState extends State<EasyTimerApp>
     if (state == AppLifecycleState.resumed ||
         state == AppLifecycleState.inactive) {
       widget.controller.refresh(recoverWakeLock: true);
+    } else if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      widget.controller.flushVolume();
     }
   }
 

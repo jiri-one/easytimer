@@ -252,6 +252,30 @@ void main() {
     },
   );
 
+  testWidgets('stop flushes pending volume once before the debounce', (
+    tester,
+  ) async {
+    final preferences = RecordingPreferences();
+    final platform = RecordingTimerPlatform();
+    final controller = WorkoutController(
+      TimerSettings(preferences),
+      platform,
+      clock: FakeClock(),
+      keepAwake: platform.keepAwake,
+    );
+    addTearDown(controller.dispose);
+    controller.start(const WorkoutOptions());
+    controller.changeVolume(35);
+    await tester.pump(const Duration(milliseconds: 50));
+    controller.stop();
+    await tester.pump();
+    expect(preferences.get('volumePercent'), 35);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(preferences.writes.where((write) => write.$1 == 'volumePercent'), [
+      ('volumePercent', 35),
+    ]);
+  });
+
   testWidgets('dispose flushes pending volume and cancels display updates', (
     tester,
   ) async {

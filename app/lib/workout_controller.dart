@@ -50,6 +50,7 @@ class WorkoutController {
   }
 
   void stop() {
+    flushVolume();
     engine.stop();
     _update?.cancel();
     platform.cancel();
@@ -65,9 +66,14 @@ class WorkoutController {
     volume.value = next;
     platform.setVolume(next);
     _volumeSave?.cancel();
-    _volumeSave = Timer(const Duration(milliseconds: 250), () {
-      unawaited(settings.saveVolume(volume.value));
-    });
+    _volumeSave = Timer(const Duration(milliseconds: 250), flushVolume);
+  }
+
+  void flushVolume() {
+    if (_volumeSave == null) return;
+    _volumeSave!.cancel();
+    _volumeSave = null;
+    unawaited(settings.saveVolume(volume.value));
   }
 
   void refresh({bool recoverWakeLock = false}) {
@@ -91,10 +97,7 @@ class WorkoutController {
 
   void dispose() {
     _update?.cancel();
-    if (_volumeSave?.isActive ?? false) {
-      _volumeSave!.cancel();
-      unawaited(settings.saveVolume(volume.value));
-    }
+    flushVolume();
     showingTimer.value = false;
     platform.cancel();
     showingTimer.dispose();

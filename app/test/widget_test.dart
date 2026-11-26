@@ -181,6 +181,27 @@ void main() {
     });
   }
 
+  for (final state in [
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+    AppLifecycleState.detached,
+  ]) {
+    timerTest('$state flushes pending volume before the debounce', (
+      tester,
+    ) async {
+      await tester.pumpWidget(EasyTimerApp(controller: controller));
+      await tester.pump();
+      controller.start(const WorkoutOptions());
+      controller.changeVolume(35);
+      await tester.pump(const Duration(milliseconds: 50));
+      final observer =
+          tester.state(find.byType(EasyTimerApp)) as WidgetsBindingObserver;
+      observer.didChangeAppLifecycleState(state);
+      await tester.pump();
+      expect(controller.settings.preferences!.get('volumePercent'), 35);
+    });
+  }
+
   Future<void> mount(WidgetTester tester) async {
     await tester.pumpWidget(EasyTimerApp(controller: controller));
     await tester.pumpAndSettle();
