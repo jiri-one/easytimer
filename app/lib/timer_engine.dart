@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 
 import 'clock.dart';
-import 'constants.dart';
 
 export 'clock.dart';
+
+const prepareMs = 5000;
 
 class WorkoutOptions {
   const WorkoutOptions({this.active = 45, this.rest = 15, this.sets = 0});

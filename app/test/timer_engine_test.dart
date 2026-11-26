@@ -1,4 +1,3 @@
-import 'package:easytimer/constants.dart';
 import 'package:easytimer/timer_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
