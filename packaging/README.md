@@ -93,9 +93,11 @@ inhibition in the final sandbox before submission.
 ## CI and releases
 
 `ci.yml` analyzes and tests Dart, builds web, Linux and a debug APK, and checks
-desktop metadata and icons. The `app` job builds web once and uploads the Pages
-artifact; deployment from `main` waits for both `tests` and `app`. Manual CI runs
-on `main` can also deploy. Ordinary CI needs no Android signing secrets.
+desktop metadata and icons. The `app` job uploads the `web-app` artifact; the
+`deploy` job downloads it and runs `wrangler deploy` from `app/`, using
+`app/wrangler.jsonc`. Deployment from `main` waits for both `tests` and `app`.
+Manual CI runs on `main` can also deploy. Ordinary CI needs no Android signing
+secrets.
 
 `flatpak.yml` runs on relevant pull requests (`packaging/flatpak/**`, `app/linux/**`,
 or `**/pubspec.lock`), Mondays at 04:23 UTC, and release tags
@@ -186,49 +188,34 @@ keys and cannot update each other. Google's dependency-info blobs are disabled i
 both APK and AAB output. Audit any new dependency for a free licence and proprietary
 SDKs before submitting to F-Droid.
 
-## GitHub Pages and DNS
+## Cloudflare Workers and DNS
 
-The web script uses `flutter build web --release --base-href /` with JavaScript
-and locally bundled CanvasKit and Droid Sans Mono. Native and web builds register
-that font only as Flutter's default Roboto family. JavaScript
-is the conservative production build; `app/tool/build_web.sh --wasm` keeps the
-Skwasm renderer and Web Audio backend. A Wasm build also has a JavaScript fallback,
-but requires Wasm-compatible dependencies; multithreaded Wasm rendering
-requires cross-origin-isolation headers. See
-[Flutter's Wasm documentation](https://docs.flutter.dev/platform-integration/web/wasm).
-The manifest uses EasyTimer, standalone display and both regular and maskable icons.
-Desktop browsers open the app in a phone frame with an about panel and a Full screen
-button. Phones, tablets and small windows open the full-page app. The surrounding
-page uses the bundled Droid Sans Mono font and follows the system light/dark theme.
-An offline Android/Linux app does not by itself guarantee offline web availability;
-check the web caching behaviour separately before advertising it.
+See [Web hosting](../README.md#web-hosting) for the public app and deployment
+triggers. The assets-only Worker is `easytimer`; `app/wrangler.jsonc` disables
+`workers.dev` and preview URLs and serves unknown paths as 404.
 
-Jiří must configure the following, in this order:
+The GitHub environment `cloudflare` must allow deployments only from `main`
+and hold `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. For deploying this
+existing Worker, the token needs Workers **Editor** access on the intended
+account (the legacy **Account → Workers Scripts → Edit** permission).
+The custom domain is managed separately, so deployment needs no zone permission.
+See [Wrangler's permission requirements](https://developers.cloudflare.com/workers/authorization/workers/#wrangler).
 
-1. In **GitHub account Settings → Pages → Add a domain**, verify `jiri.one` if it is
-   not already verified. In Cloudflare, add a **TXT** record named
-   `_github-pages-challenge-jiri-one` in the `jiri.one` zone, with the exact token
-   GitHub supplies. Its full name is `_github-pages-challenge-jiri-one.jiri.one`.
-   Return to GitHub and select **Verify**; retain the TXT record. Verifying the
-   parent domain also protects its immediate subdomains, including `easytimer`.
-   See [GitHub's domain verification instructions](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/verifying-your-custom-domain-for-github-pages).
-2. In repository **Settings → Pages → Build and deployment → Source**, select
-   **GitHub Actions**. Under **Custom domain**, save `easytimer.jiri.one`.
-   Allow the `github-pages` environment to deploy from `main` and ensure the Actions
-   token can deploy Pages; the workflow requests `pages: write` and `id-token: write`.
-3. In Cloudflare DNS for `jiri.one`, add **CNAME**, name **`easytimer`**, target
-   **`jiri-one.github.io`**, proxy status **DNS only** (grey cloud), TTL Auto.
-   The target is the account domain, without a repository path.
-4. After DNS and certificate provisioning finish, enable **Enforce HTTPS** in
-   repository Pages settings. Push an approved commit to `main` or run CI manually
-   from `main`, then check `https://easytimer.jiri.one`.
+In the Cloudflare dashboard, select **Workers & Pages → easytimer → Settings →
+Domains & Routes → Add → Custom Domain** and enter `easytimer.jiri.one`.
+Cloudflare creates and manages the DNS record and certificate. The managed DNS
+record currently appears as a read-only, proxied `AAAA 100::`; do not recreate
+it manually. See [Cloudflare Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/).
+GitHub Pages is disabled for this repository, and no CNAME to GitHub is needed.
 
-With an Actions publishing source, GitHub ignores a `CNAME` file in the artifact
-and does not require one. The repository Pages **Custom domain** setting is the
-configuration that matters, so the build does not create a `CNAME` file. See
-[GitHub's custom domain instructions](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site).
-The base path `/` assumes that custom domain; the default repository-path URL is
-not the deployment target.
+The web script builds JavaScript with base path `/` and locally bundled
+CanvasKit and Droid Sans Mono. Native and web builds register that font only as
+Flutter's default Roboto family. JavaScript is the production build;
+`app/tool/build_web.sh --wasm` keeps the Skwasm renderer and Web Audio backend.
+A Wasm build also has a JavaScript fallback; multithreaded rendering requires
+cross-origin-isolation headers. See [Flutter's Wasm documentation](https://docs.flutter.dev/platform-integration/web/wasm).
+The manifest uses standalone display and regular and maskable icons. No service
+worker is registered, so offline web availability is not guaranteed.
 
 ## Flatpak and Flathub
 
