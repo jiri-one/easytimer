@@ -124,6 +124,39 @@ void main() {
     expect(shows, greaterThan(beforeSecondTap));
   });
 
+  timerTest('locale changes preserve number field focus and selection', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      EasyTimerApp(controller: controller, locale: const Locale('en')),
+    );
+    await tester.pump();
+    for (var index = 0; index < 3; index++) {
+      final field = find.byType(EditableText).at(index);
+      final before = tester.widget<EditableText>(field);
+      before.focusNode.requestFocus();
+      before.controller.selection = const TextSelection.collapsed(offset: 0);
+      await tester.pump();
+      for (final locale in [
+        const Locale('cs'),
+        const Locale('fr'),
+        const Locale('en'),
+      ]) {
+        await tester.pumpWidget(
+          EasyTimerApp(controller: controller, locale: locale),
+        );
+        await tester.pump();
+        final after = tester.widget<EditableText>(field);
+        expect(after.focusNode, same(before.focusNode));
+        expect(after.focusNode.hasPrimaryFocus, isTrue);
+        expect(
+          after.controller.selection,
+          const TextSelection.collapsed(offset: 0),
+        );
+      }
+    }
+  });
+
   Future<void> mount(WidgetTester tester) async {
     await tester.pumpWidget(EasyTimerApp(controller: controller));
     await tester.pumpAndSettle();

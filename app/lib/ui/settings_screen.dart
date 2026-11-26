@@ -124,6 +124,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
 
         Widget field(
+          String role,
           String label,
           TextEditingController controller,
           String less,
@@ -150,7 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   Expanded(
                     child: NumberField(
-                      key: ValueKey(label),
+                      key: ValueKey(role),
                       label: label,
                       controller: controller,
                       fontSize: valueFontSize,
@@ -175,6 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
         final groups = [
           field(
+            'active',
             strings.activeTimeLabel,
             _active,
             strings.decreaseActiveTime,
@@ -183,6 +185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             () => _change(_active, _defaults.active, 5, 5),
           ),
           field(
+            'rest',
             strings.restTimeLabel,
             _rest,
             strings.decreaseRestTime,
@@ -191,6 +194,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             () => _change(_rest, _defaults.rest, 0, 5),
           ),
           field(
+            'sets',
             strings.setsLabel,
             _sets,
             strings.decreaseSets,
