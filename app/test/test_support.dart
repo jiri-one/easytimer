@@ -142,6 +142,8 @@ class FakeAudioPlayer implements AudioPlayer {
   @override
   Source? source;
   @override
+  PositionUpdater? positionUpdater;
+  @override
   PlayerState state = PlayerState.stopped;
   @override
   double volume = 1;
@@ -224,6 +226,7 @@ class FakeAudioPlayer implements AudioPlayer {
   Future<void> resume() async {
     attempts.add(clock.nowMs);
     await _call('resume');
+    if (state == PlayerState.disposed) return;
     state = PlayerState.playing;
     if (requiresPreparation) {
       unpreparedResumes++;

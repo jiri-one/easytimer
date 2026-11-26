@@ -12,32 +12,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'test_support.dart';
 
 class _Harness {
-  _Harness(this.tester);
+  _Harness(this.tester) {
+    backend = PlatformBackend(
+      clock,
+      playerFactory: (kind) {
+        final player = FakeAudioPlayer(
+          clock,
+          starts: starts,
+          onStart: _checkStream,
+        );
+        _players[kind] = player;
+        allPlayers.add(player);
+        return player;
+      },
+    );
+  }
 
   final WidgetTester tester;
   final clock = FakeClock();
   final starts = <(SoundKind, int)>[];
   int maximumPlaying = 0;
-  late final alarm = FakeAudioPlayer(
-    clock,
-    starts: starts,
-    onStart: _checkStream,
-  );
-  late final end = FakeAudioPlayer(
-    clock,
-    starts: starts,
-    onStart: _checkStream,
-  );
-  late final backend = PlatformBackend(
-    clock,
-    alarmPlayer: alarm,
-    endPlayer: end,
-  );
+  final _players = <SoundKind, FakeAudioPlayer>{};
+  final allPlayers = <FakeAudioPlayer>[];
+  late final PlatformBackend backend;
 
-  List<FakeAudioPlayer> get players => [alarm, end];
+  FakeAudioPlayer get alarm => _players[SoundKind.alarm]!;
+  FakeAudioPlayer get end => _players[SoundKind.end]!;
+  List<FakeAudioPlayer> get players => _players.values.toList();
 
   void _checkStream() {
-    final playing = players.where((player) => player.playing).length;
+    final playing = players
+        .where((player) => player.playing && player.volume > 0)
+        .length;
     if (playing > maximumPlaying) maximumPlaying = playing;
   }
 
@@ -70,8 +76,8 @@ void _nativeTest(
       try {
         h.backend.cancel();
         await tester.pump();
-        for (final player in h.players) {
-          await player.dispose();
+        for (final player in h.allPlayers) {
+          if (player.state != PlayerState.disposed) await player.dispose();
         }
       } finally {
         debugDefaultTargetPlatformOverride = previousPlatform;
@@ -314,6 +320,92 @@ void main() {
     );
   }
 
+  for (final operation in ['stop', 'volume']) {
+    _nativeTest('error abandons a pending $operation on the failed player', (
+      h,
+    ) async {
+      h.schedule(const [SoundEvent(SoundKind.alarm, 0, 49)]);
+      await h.pump();
+      final failed = h.alarm;
+      final pending = Completer<void>();
+      failed.respond = (method) => method == operation ? pending.future : null;
+      if (operation == 'stop') {
+        h.backend.cancel();
+      } else {
+        h.backend.setVolume(50);
+      }
+      await h.pump();
+      failed.emitError();
+      await h.pump();
+      failed.calls.clear();
+      h.clock.nowMs = 3000;
+      h.schedule(const [SoundEvent(SoundKind.alarm, 3000, 3049)]);
+      await h.pump();
+      expect(h.starts, [(SoundKind.alarm, 0), (SoundKind.alarm, 3000)]);
+      expect(failed.calls, isEmpty);
+      pending.completeError(StateError('late reply'));
+      await h.pump();
+      expect(failed.calls, isEmpty);
+    });
+  }
+
+  for (final disposal in ['pending', 'error']) {
+    _nativeTest(
+      'replaces an errored player without awaiting $disposal disposal',
+      (h) async {
+        await h.backend.initialize();
+        final failed = h.alarm;
+        final disposed = Completer<void>();
+        failed.calls.clear();
+        failed.respond = (method) {
+          if (method == 'dispose') {
+            if (disposal == 'error') throw StateError('dispose failed');
+            return disposed.future;
+          }
+          throw StateError('Recovery reused the failed player');
+        };
+        failed.emitError();
+        await h.pump();
+        expect(failed.calls, [('dispose', null)]);
+        expect(h.alarm, isNot(same(failed)));
+        h.schedule(const [SoundEvent(SoundKind.alarm, 0, 49)]);
+        await h.pump();
+        expect(h.starts, [(SoundKind.alarm, 0)]);
+        expect(h.alarm.calls.where((c) => c.$1 == 'source'), hasLength(1));
+        expect(failed.calls, [('dispose', null)]);
+        failed.respond = (_) {};
+        if (disposal == 'pending') disposed.complete();
+        await h.pump();
+      },
+    );
+  }
+
+  _nativeTest(
+    'Android keeps replacement priming silent during live gain changes',
+    (h) async {
+      await h.backend.initialize();
+      h.schedule(const [SoundEvent(SoundKind.alarm, 0, 49)]);
+      await h.pump();
+      h.end.emitError();
+      await h.pump();
+      final priming = Completer<void>();
+      h.end.respond = (method) => method == 'resume' ? priming.future : null;
+      final initialization = h.backend.initialize();
+      await h.pump();
+      expect(h.end.volume, 0);
+      h.backend.setVolume(50);
+      await h.pump();
+      expect(h.alarm.volume, 0.25);
+      expect(h.end.volume, 0);
+      priming.complete();
+      await h.pump();
+      await initialization;
+      expect(h.end.volume, 0.25);
+      expect(h.end.state, PlayerState.paused);
+    },
+    platform: TargetPlatform.android,
+  );
+
   for (final platform in [TargetPlatform.android, TargetPlatform.linux]) {
     final android = platform == TargetPlatform.android;
     for (final kind in SoundKind.values) {
@@ -322,19 +414,21 @@ void main() {
         (h) async {
           h.backend.setVolume(50);
           await h.backend.initialize();
-          final player = kind == SoundKind.alarm ? h.alarm : h.end;
+          var player = kind == SoundKind.alarm ? h.alarm : h.end;
           final healthy = kind == SoundKind.alarm ? h.end : h.alarm;
           final gains = <double>[];
-          player.respond = (method) {
-            if (method == 'resume') gains.add(player.volume);
-          };
           for (var round = 0; round < 3; round++) {
-            player.emitError();
+            final failed = player;
+            failed.calls.clear();
+            failed.emitError();
             await h.pump();
-            player.calls.clear();
-            player.complete();
-            await h.pump();
-            expect(player.calls, isEmpty);
+            expect(failed.calls, [('dispose', null)]);
+            player = kind == SoundKind.alarm ? h.alarm : h.end;
+            expect(player, isNot(same(failed)));
+            expect(player.positionUpdater, isNull);
+            player.respond = (method) {
+              if (method == 'resume') gains.add(player.volume);
+            };
             h.starts.clear();
             gains.clear();
             final event = SoundEvent(kind, h.clock.nowMs, null);
@@ -387,10 +481,10 @@ void main() {
           pending.complete();
           await h.pump();
           expect(h.starts, isEmpty);
-          expect(player.unpreparedResumes, 1);
+          expect(player.unpreparedResumes, 0);
           expect(player.unpreparedSeeks, 0);
-          expect(player.playing, isFalse);
-          player.respond = (_) {};
+          expect(player.state, PlayerState.disposed);
+          final replacement = kind == SoundKind.alarm ? h.alarm : h.end;
           final retry = SoundEvent(
             kind,
             kind == SoundKind.alarm ? 100 : 0,
@@ -399,16 +493,19 @@ void main() {
           h.schedule([retry]);
           await h.pump();
           expect(h.starts, List.filled(android ? 2 : 1, (kind, 100)));
-          expect(player.calls.where((c) => c.$1 == 'source'), hasLength(2));
+          expect(
+            replacement.calls.where((c) => c.$1 == 'source'),
+            hasLength(1),
+          );
           h.schedule([retry]);
           await h.pump();
           expect(h.starts, hasLength(android ? 2 : 1));
           h.backend.setVolume(50);
           await h.pump();
-          expect(player.volume, 0.25);
+          expect(replacement.volume, 0.25);
           h.backend.cancel();
           await h.pump();
-          expect(player.playing, kind == SoundKind.end);
+          expect(replacement.playing, kind == SoundKind.end);
         },
         platform: platform,
       );
@@ -433,24 +530,15 @@ void main() {
       await h.pump();
       h.backend.setVolume(75);
       await h.pump();
-      if (!android) expect(h.alarm.volume, 0.5625);
+      expect(h.alarm.volume, 0.5625);
       source.complete();
       await h.pump();
       await recovery;
       expect(h.alarm.calls.where((c) => c.$1 == 'source'), isEmpty);
       expect(h.alarm.calls.where((c) => c.$1 == 'resume'), isEmpty);
-      expect(
-        h.alarm.calls.where((c) => c.$1 == 'seek'),
-        android ? [('seek', Duration.zero)] : isEmpty,
-      );
-      if (android) {
-        expect(h.alarm.calls.take(2), [
-          ('stop', null),
-          ('seek', Duration.zero),
-        ]);
-      }
-      expect(h.alarm.playing, !android);
-      expect(h.end.calls.where((c) => c.$1 == 'source'), hasLength(2));
+      expect(h.alarm.calls.where((c) => c.$1 == 'seek'), isEmpty);
+      expect(h.alarm.playing, isTrue);
+      expect(h.end.calls.where((c) => c.$1 == 'source'), hasLength(1));
       h.schedule(const [SoundEvent(SoundKind.end, 100, null)]);
       await h.pump(100);
       expect(h.end.playing, isTrue);
@@ -489,14 +577,12 @@ void main() {
         final first = h.backend.initialize();
         await h.pump();
         expect(waiting, isTrue);
-        h.end.emitError();
+        final failed = h.end;
+        final beforeError = failed.calls.length;
+        failed.emitError();
         await h.pump();
-        if (operation != 'seek') {
-          expect(identical(first, h.backend.initialize()), isTrue);
-          pending.complete();
-          await h.pump();
-        }
         await first;
+        expect(failed.calls.skip(beforeError), [('dispose', null)]);
         expect(h.end.requiresPreparation, isTrue);
         h.end.calls.clear();
         h.starts.clear();
@@ -514,10 +600,8 @@ void main() {
         expect(h.end.completionStreamReads, 1);
         expect(h.end.unpreparedSeeks, 0);
         expect(h.starts, [(SoundKind.end, 0)]);
-        if (operation == 'seek') {
-          pending.complete();
-          await h.pump();
-        }
+        pending.complete();
+        await h.pump();
         h.starts.clear();
         h.schedule(const [SoundEvent(SoundKind.end, 0, null)]);
         await h.pump();
@@ -551,7 +635,7 @@ void main() {
           await h.pump();
           await h.pump(10);
           expect(h.starts, [(SoundKind.alarm, 0), (SoundKind.alarm, 3010)]);
-          expect(h.alarm.calls.where((c) => c.$1 == 'source'), hasLength(2));
+          expect(h.alarm.calls.where((c) => c.$1 == 'source'), hasLength(1));
           expect(h.alarm.unpreparedSeeks, 0);
           final current = Completer<void>();
           h.alarm.respond = (method) =>
@@ -623,35 +707,34 @@ void main() {
     expect(h.starts, [(SoundKind.alarm, 2000), (SoundKind.alarm, 5000)]);
   });
 
-  _nativeTest(
-    'schedule reads the clock once and refreshes duplicate plans',
-    (h) async {
-      final timers = <Timer>[];
-      await runZoned(
-        () async {
-          const event = SoundEvent(SoundKind.alarm, 3000, 3049);
-          h.clock.reads = 0;
-          h.schedule([event]);
-          expect(h.clock.reads, 1);
-          expect(timers, hasLength(1));
-          final timer = timers.single;
-          h.clock.reads = 0;
-          h.schedule([event]);
-          expect(h.clock.reads, 1);
-          expect(timers, hasLength(2));
-          expect(timer.isActive, isFalse);
-          expect(timers.last.isActive, isTrue);
+  _nativeTest('schedule reads the clock once and refreshes duplicate plans', (
+    h,
+  ) async {
+    final timers = <Timer>[];
+    await runZoned(
+      () async {
+        const event = SoundEvent(SoundKind.alarm, 3000, 3049);
+        h.clock.reads = 0;
+        h.schedule([event]);
+        expect(h.clock.reads, 1);
+        expect(timers, hasLength(1));
+        final timer = timers.single;
+        h.clock.reads = 0;
+        h.schedule([event]);
+        expect(h.clock.reads, 1);
+        expect(timers, hasLength(2));
+        expect(timer.isActive, isFalse);
+        expect(timers.last.isActive, isTrue);
+      },
+      zoneSpecification: ZoneSpecification(
+        createTimer: (self, parent, zone, duration, callback) {
+          final timer = parent.createTimer(zone, duration, callback);
+          timers.add(timer);
+          return timer;
         },
-        zoneSpecification: ZoneSpecification(
-          createTimer: (self, parent, zone, duration, callback) {
-            final timer = parent.createTimer(zone, duration, callback);
-            timers.add(timer);
-            return timer;
-          },
-        ),
-      );
-    },
-  );
+      ),
+    );
+  });
 
   _nativeTest('each source is prepared once across stopped and replaced cues', (
     h,

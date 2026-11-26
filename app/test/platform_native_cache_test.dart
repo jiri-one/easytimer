@@ -119,7 +119,10 @@ void main() {
   (PlatformBackend, _FilePlayer, _FilePlayer) backend(FakeClock clock) {
     final alarm = _FilePlayer(clock);
     final end = _FilePlayer(clock);
-    final backend = PlatformBackend(clock, alarmPlayer: alarm, endPlayer: end);
+    final backend = PlatformBackend(
+      clock,
+      playerFactory: (kind) => kind == SoundKind.alarm ? alarm : end,
+    );
     addTearDown(() async {
       backend.cancel();
       await Future<void>.delayed(Duration.zero);
