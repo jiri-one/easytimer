@@ -20,7 +20,7 @@ Builds:
     subdir: app
     output: build/app/outputs/flutter-apk/app-release.apk
     srclibs:
-      - flutter@3.47.7
+      - flutter@3.50.1
     rm:
       - app/linux
       - app/web

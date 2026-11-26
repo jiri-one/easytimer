@@ -34,7 +34,7 @@ including when its window stays unfocused.
 
 ## Build and test
 
-Use Flutter 3.47.7 / Dart 3.13.5, an Android SDK for APK builds, and the standard
+Use Flutter 3.50.1 / Dart 3.14.0, an Android SDK for APK builds, and the standard
 Flutter Linux build dependencies plus GStreamer development headers
 (`libgstreamer1.0-dev` and `libgstreamer-plugins-base1.0-dev` on Debian/Ubuntu)
 for desktop builds. From `app/`:

@@ -26,7 +26,7 @@ licence copy is installed. Keep root `NOTICE` synchronized with the bundled
 
 ## Local checks
 
-Use Flutter **3.47.7**. From the repository root:
+Use Flutter **3.50.1**. From the repository root:
 
 ```sh
 desktop-file-validate packaging/linux/one.jiri.easytimer.desktop
@@ -233,7 +233,7 @@ not the deployment target.
 ## Flatpak and Flathub
 
 The manifest uses Freedesktop **26.08**, **llvm22** and Flutter
-**3.47.7**. `flatpak-flutter` prefetches and pins the Flutter SDK, pub packages and
+**3.50.1**. `flatpak-flutter` prefetches and pins the Flutter SDK, pub packages and
 other sources so that the actual build runs without network access. The app has
 Wayland, fallback X11, IPC, DRI and PulseAudio access; it has no network access.
 Custom licences remain in `/app/easytimer/data/flutter_assets/assets/licenses/`.
@@ -302,7 +302,7 @@ After publishing the first version tag, add real screenshots under
 `app/fastlane/metadata/android/{en-US,cs-CZ}/images/phoneScreenshots/`. The initial
 English and Czech descriptions, icon and `changelogs/1.txt` are already present.
 Confirm the release matches `CurrentVersion`, `CurrentVersionCode` and the first
-build in the recipe. The recipe uses Flutter **3.47.7**, NDK **r28c**, the committed
+build in the recipe. The recipe uses Flutter **3.50.1**, NDK **r28c**, the committed
 lockfile and an unsigned universal APK; it contains no proprietary dependencies.
 
 Fork `fdroid/fdroiddata` on GitLab, copy

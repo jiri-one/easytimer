@@ -43,5 +43,5 @@ modules:
         branch: main
       - type: git
         url: https://github.com/flutter/flutter.git
-        tag: 3.47.7
+        tag: 3.50.1
         dest: flutter
