@@ -12,6 +12,7 @@ import 'package:easytimer/ui/timer_screen.dart';
 import 'package:easytimer/ui/volume_control.dart';
 import 'package:easytimer/workout_controller.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +42,50 @@ void main() {
         await tester.pumpWidget(const SizedBox());
       }
     });
+  }
+
+  for (final dark in [false, true]) {
+    timerTest(
+      'Android system bars follow the ${dark ? 'dark' : 'light'} palette',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        final calls = <Map<dynamic, dynamic>>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'SystemChrome.setSystemUIOverlayStyle') {
+              calls.add(Map<dynamic, dynamic>.from(call.arguments as Map));
+            }
+            return null;
+          },
+        );
+        addTearDown(() {
+          debugDefaultTargetPlatformOverride = null;
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          );
+        });
+        await tester.pumpWidget(
+          EasyTimerApp(
+            controller: controller,
+            themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+          ),
+        );
+        await tester.pump();
+        expect(calls, isNotEmpty);
+        final style = calls.last;
+        final background = dark ? 0xff000000 : 0xffffffff;
+        final icons = dark ? 'Brightness.light' : 'Brightness.dark';
+        expect(style['statusBarColor'], 0);
+        expect(style['statusBarIconBrightness'], icons);
+        expect(style['systemNavigationBarIconBrightness'], icons);
+        expect(style['systemNavigationBarColor'], background);
+        expect(style['systemNavigationBarDividerColor'], background);
+        expect(style['systemStatusBarContrastEnforced'], false);
+        expect(style['systemNavigationBarContrastEnforced'], false);
+      },
+    );
   }
 
   Future<void> mount(WidgetTester tester) async {

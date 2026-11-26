@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 
 import 'l10n/app_localizations.dart';
 import 'ui/settings_screen.dart';
@@ -76,6 +77,27 @@ class _EasyTimerAppState extends State<EasyTimerApp>
     darkTheme: _theme(Brightness.dark),
     themeMode: widget.themeMode,
     themeAnimationDuration: Duration.zero,
+    builder: (context, child) {
+      if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+        return child!;
+      }
+      final colors = AppPalette.of(context);
+      final icons = Theme.of(context).brightness == Brightness.light
+          ? Brightness.dark
+          : Brightness.light;
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: icons,
+          systemNavigationBarColor: colors.background,
+          systemNavigationBarDividerColor: colors.background,
+          systemNavigationBarIconBrightness: icons,
+          systemStatusBarContrastEnforced: false,
+          systemNavigationBarContrastEnforced: false,
+        ),
+        child: child!,
+      );
+    },
     scrollBehavior: const MaterialScrollBehavior().copyWith(
       scrollbars: false,
       overscroll: false,
