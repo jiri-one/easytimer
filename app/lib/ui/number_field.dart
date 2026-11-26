@@ -35,6 +35,7 @@ class NumberField extends StatefulWidget {
 class _NumberFieldState extends State<NumberField> {
   late final _focus = FocusNode(debugLabel: widget.label);
   final _scroll = InstantScrollController();
+  final _editable = GlobalKey<EditableTextState>();
 
   @override
   void dispose() {
@@ -57,7 +58,7 @@ class _NumberFieldState extends State<NumberField> {
           focused: _focus.hasFocus,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: _focus.requestFocus,
+            onTap: () => _editable.currentState!.requestKeyboard(),
             child: DecoratedBox(
               decoration: BoxDecoration(
                 border: Border(bottom: BorderSide(color: foreground, width: 2)),
@@ -110,6 +111,9 @@ class _NumberFieldState extends State<NumberField> {
                           ),
                         },
                         child: EditableText(
+                          key: _editable,
+                          // Its own tap would win and skip a repeat tap on the same caret.
+                          rendererIgnoresPointer: true,
                           controller: widget.controller,
                           focusNode: _focus,
                           scrollController: _scroll,

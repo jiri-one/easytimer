@@ -88,6 +88,42 @@ void main() {
     );
   }
 
+  timerTest('tapping a focused number field reopens the keyboard', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    var shows = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.textInput,
+      (call) async {
+        if (call.method == 'TextInput.show') shows++;
+        return null;
+      },
+    );
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.textInput,
+        null,
+      );
+    });
+    await tester.pumpWidget(EasyTimerApp(controller: controller));
+    await tester.pump();
+    final field = find.byType(NumberField).first;
+    await tester.tap(field);
+    await tester.pump();
+    expect(shows, greaterThan(0));
+    final beforeSecondTap = shows;
+    await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    final editable = tester.widget<EditableText>(
+      find.byType(EditableText).first,
+    );
+    expect(editable.focusNode.hasPrimaryFocus, isTrue);
+    await tester.tap(field);
+    await tester.pump();
+    expect(shows, greaterThan(beforeSecondTap));
+  });
+
   Future<void> mount(WidgetTester tester) async {
     await tester.pumpWidget(EasyTimerApp(controller: controller));
     await tester.pumpAndSettle();
@@ -214,6 +250,30 @@ void main() {
       );
       expect(find.text('∞'), value.isEmpty ? findsOneWidget : findsNothing);
     }
+  });
+
+  timerTest('number fields take focus from taps and accessibility, not drags', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(EasyTimerApp(controller: controller));
+    await tester.pump();
+    final focus = tester
+        .widget<EditableText>(find.byType(EditableText).first)
+        .focusNode;
+    await tester.drag(find.byType(NumberField).first, const Offset(0, -200));
+    await tester.pump();
+    expect(focus.hasFocus, isFalse);
+    tester.semantics.tap(
+      find.semantics.byPredicate(
+        (node) =>
+            node.label == 'Active' &&
+            node.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+      ),
+    );
+    await tester.pump();
+    expect(focus.hasPrimaryFocus, isTrue);
   });
 
   timerTest('settings keyboard edits, defaults, bounds and finite completion', (
