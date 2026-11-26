@@ -25,6 +25,7 @@ class NativeText extends StatelessWidget {
     fontWeight: bold ? FontWeight.bold : FontWeight.normal,
     color: color,
     height: 1,
+    letterSpacing: 0,
   );
 
   static double fitSize(

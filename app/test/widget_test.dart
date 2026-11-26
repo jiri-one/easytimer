@@ -202,6 +202,31 @@ void main() {
     });
   }
 
+  for (final (code, size) in [
+    ('fr', const Size(220, 170)),
+    ('es', const Size(220, 170)),
+    ('ca', const Size(190, 140)),
+  ]) {
+    timerTest('$code wide headers fit with their rendered letter spacing', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      controller.start(const WorkoutOptions(active: 9999, rest: 9999));
+      clock.nowMs = 5000 + 9998 * (9999 + 9999) * 1000;
+      controller.refresh();
+      await tester.pumpWidget(
+        EasyTimerApp(controller: controller, locale: Locale(code)),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final header = find.text(
+        AppLocalizations.of(tester.element(find.byType(TimerScreen))).setLabel,
+      );
+      expect(tester.widget<Text>(header).style!.letterSpacing, 0);
+    });
+  }
+
   Future<void> mount(WidgetTester tester) async {
     await tester.pumpWidget(EasyTimerApp(controller: controller));
     await tester.pumpAndSettle();
